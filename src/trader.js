@@ -97,56 +97,58 @@ async function placeOrderWithRetry(params, orderType) {
 }
 
 async function initClobClient() {
-  if (config.bot.dryRun) {
-    log.info('DRY RUN mode — trades will be simulated, not executed');
-    return;
-  }
-
-  // Validate credentials
+  // Validate wallet credentials (needed for both dry-run and live)
   if (!config.wallet.privateKey || config.wallet.privateKey === 'your_private_key_here') {
     throw new Error('PRIVATE_KEY not set in .env — run "node src/setup-keys.js" first');
   }
-  if (!config.api.key || config.api.key === 'your_api_key_here') {
-    throw new Error('API credentials not set in .env — run "node src/setup-keys.js" first');
-  }
 
   try {
-    // Create provider and signer for on-chain reads
+    // Always create provider + signer — needed for balance reads even in dry-run
     provider = new ethers.providers.JsonRpcProvider(C.POLYGON_RPC);
     walletSigner = new Wallet(config.wallet.privateKey, provider);
-
-    const creds = {
-      key: config.api.key,
-      secret: config.api.secret,
-      passphrase: config.api.passphrase,
-    };
-
-    clobClient = new ClobClient(
-      config.api.clobUrl,
-      C.POLYGON_CHAIN_ID,
-      walletSigner,
-      creds,
-      0,
-      config.wallet.address || walletSigner.address
-    );
-
-    log.info('CLOB client initialized for LIVE trading');
     log.info(`Wallet: ${walletSigner.address}`);
 
-    // Check balances on startup
+    if (config.bot.dryRun) {
+      log.info('DRY RUN mode — trades will be simulated, not executed');
+      // Skip CLOB client setup but still read balances
+    } else {
+      // Validate API credentials for live trading
+      if (!config.api.key || config.api.key === 'your_api_key_here') {
+        throw new Error('API credentials not set in .env — run "node src/setup-keys.js" first');
+      }
+
+      const creds = {
+        key: config.api.key,
+        secret: config.api.secret,
+        passphrase: config.api.passphrase,
+      };
+
+      clobClient = new ClobClient(
+        config.api.clobUrl,
+        C.POLYGON_CHAIN_ID,
+        walletSigner,
+        creds,
+        0,
+        config.wallet.address || walletSigner.address
+      );
+
+      log.info('CLOB client initialized for LIVE trading');
+    }
+
+    // Check balances on startup (both modes)
     const usdcBalance = await getUSDCBalance();
     if (usdcBalance !== null) {
-      log.info(`USDC balance: $${usdcBalance.toFixed(2)}`);
-      if (usdcBalance < 5) log.warn('Low USDC — fund your wallet before trading');
+      log.info(`USDC.e balance: $${usdcBalance.toFixed(2)}`);
+      if (usdcBalance < 5 && !config.bot.dryRun) log.warn('Low USDC — fund your wallet before trading');
     }
 
     const maticBal = await provider.getBalance(walletSigner.address);
     const matic = parseFloat(ethers.utils.formatEther(maticBal));
     log.info(`MATIC balance: ${matic.toFixed(4)}`);
-    if (matic < 0.01) log.warn('Low MATIC — you need gas for transactions');
+    if (matic < 0.01 && !config.bot.dryRun) log.warn('Low MATIC — you need gas for transactions');
 
   } catch (err) {
-    log.error(`Failed to init CLOB client: ${err.message}`);
+    log.error(`Failed to init: ${err.message}`);
     throw err;
   }
 }
