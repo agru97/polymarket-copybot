@@ -265,8 +265,8 @@ function getTradeStats() {
   const totalPnl = d.prepare(`SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE resolved = 1`).get();
   const byBucket = d.prepare(`SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades GROUP BY bucket`).all();
   const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades GROUP BY trader_address`).all();
-  const dailyPnl = d.prepare(`SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30`).all();
-  const recentSnapshots = d.prepare(`SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168`).all(); // 7 days of hourly
+  const dailyPnl = d.prepare(`SELECT day, pnl, trades FROM (SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30) ORDER BY day ASC`).all();
+  const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all(); // 7 days of hourly, chronological
   return { total: total.count, wins: wins.count, losses: losses.count, totalPnl: totalPnl.total, byBucket, byTrader, dailyPnl, recentSnapshots };
 }
 
@@ -302,7 +302,7 @@ function logAudit(action, details = '', actor = 'system', ipAddress = '') {
 
 function getAuditLog(limit = 100) {
   return getDb().prepare(
-    `SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?`
+    `SELECT id, timestamp, action, actor, details, ip_address AS ip FROM audit_log ORDER BY timestamp DESC LIMIT ?`
   ).all(limit);
 }
 

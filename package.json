@@ -8,7 +8,12 @@
     "setup": "node src/setup-keys.js",
     "validate": "node src/validate-config.js",
     "dashboard": "node src/dashboard.js",
-    "dev": "node src/index.js | tee logs/bot.log"
+    "dev": "node src/index.js | tee logs/bot.log",
+    "dev:dashboard": "node dev-dashboard.js",
+    "build:dashboard": "cd dashboard && npm run build",
+    "lint": "eslint . && cd dashboard && eslint .",
+    "lint:fix": "eslint --fix . && cd dashboard && eslint --fix .",
+    "typecheck": "cd dashboard && npx tsc -b --noEmit"
   },
   "dependencies": {
     "@polymarket/clob-client": "^4.0.0",
@@ -16,5 +21,10 @@
     "dotenv": "^16.4.0",
     "ethers": "^5.8.0",
     "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "globals": "^17.3.0"
   }
 }

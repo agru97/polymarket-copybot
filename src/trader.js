@@ -331,7 +331,10 @@ async function executeSignal(signal, currentEquity) {
 
     // === DRY RUN CLOSE ===
     if (config.bot.dryRun) {
-      const exitPrice = price || ourPosition.current_price || ourPosition.entry_price;
+      // Use real market price for PnL — the CLOSE signal's price is the leader's OLD entry (cost basis),
+      // not the actual exit price, so it would always show $0 PnL. Fetch current market price instead.
+      const marketPrice = await getMarketPrice(tokenId, 'SELL');
+      const exitPrice = marketPrice || price || ourPosition.current_price || ourPosition.entry_price;
       const pnl = calculatePnl(ourPosition.entry_price, exitPrice, closeSize, ourPosition.side);
       log.info(`SIM ${isPartial ? 'PARTIAL ' : ''}CLOSE: Sell ${tokens.toFixed(2)} tokens ($${closeSize.toFixed(2)}) on "${(marketName || marketId).slice(0, 40)}" | Entry: ${ourPosition.entry_price} → Exit: ${exitPrice} | PnL: $${pnl.toFixed(2)}`);
       db.logTrade({

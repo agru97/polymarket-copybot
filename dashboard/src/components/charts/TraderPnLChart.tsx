@@ -1,0 +1,62 @@
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts'
+import ChartTooltip from './ChartTooltip'
+
+interface TraderData {
+  trader_address: string
+  count: number
+  pnl: number
+}
+
+export default function TraderPnLChart({ data }: { data: TraderData[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+        No trader data yet
+      </div>
+    )
+  }
+
+  const chartData = data.map(t => ({
+    name: `${t.trader_address.slice(0, 6)}...${t.trader_address.slice(-4)}`,
+    pnl: t.pnl,
+    count: t.count,
+    label: `${t.count} trades`,
+  }))
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 60, left: 10, bottom: 5 }}>
+        <XAxis
+          type="number"
+          tick={{ fontSize: 10 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v) => `$${v}`}
+        />
+        <YAxis
+          type="category"
+          dataKey="name"
+          tick={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}
+          axisLine={false}
+          tickLine={false}
+          width={90}
+        />
+        <Tooltip content={<ChartTooltip />} />
+        <Bar dataKey="pnl" name="P&L" radius={[0, 4, 4, 0]} maxBarSize={28} animationDuration={600}>
+          {chartData.map((entry, i) => (
+            <Cell
+              key={i}
+              fill={entry.pnl >= 0 ? 'hsl(var(--profit))' : 'hsl(var(--loss))'}
+              fillOpacity={0.8}
+            />
+          ))}
+          <LabelList
+            dataKey="label"
+            position="right"
+            style={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
