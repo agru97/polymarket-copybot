@@ -61,7 +61,8 @@ function rateLimit(ip, maxPerMinute = 60) {
 // Auth middleware
 function requireAuth(req, res, next) {
   // Allow /health without auth
-  if (req.path === '/api/health') return next();
+  // Note: middleware is mounted on '/api', so req.path is stripped of the prefix
+  if (req.path === '/health') return next();
 
   const token = req.headers.authorization?.replace('Bearer ', '') ||
                 req.query.token ||
@@ -69,8 +70,8 @@ function requireAuth(req, res, next) {
 
   if (token === SESSION_TOKEN) return next();
 
-  // Check if login request
-  if (req.path === '/api/login') return next();
+  // Check if login request (req.path is relative to /api mount)
+  if (req.path === '/login') return next();
 
   res.status(401).json({ error: 'Unauthorized — provide dashboard password' });
 }
@@ -96,7 +97,8 @@ function start(getEquity, setEquity) {
   // CSRF protection on state-changing methods
   app.use('/api', (req, res, next) => {
     // Skip CSRF for safe methods (GET, HEAD, OPTIONS) and login
-    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/api/login') {
+    // Note: mounted on '/api', so req.path is relative (e.g. '/login' not '/api/login')
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/login') {
       return next();
     }
     const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
