@@ -141,7 +141,13 @@ async function main() {
         console.log(`  ✅ ${name}: already approved`);
       } else {
         console.log(`  → Approving USDC for ${name}...`);
-        const tx = await usdc.approve(address, ethers.constants.MaxUint256);
+        // Fetch current gas price from network (Polygon requires 25+ gwei now)
+        const feeData = await provider.getFeeData();
+        const gasOverrides = {
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(2),  // 2x for reliability
+          maxFeePerGas: feeData.maxFeePerGas.mul(2),
+        };
+        const tx = await usdc.approve(address, ethers.constants.MaxUint256, gasOverrides);
         console.log(`    Tx: ${tx.hash}`);
         console.log('    Waiting for confirmation...');
         await tx.wait();
