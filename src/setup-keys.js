@@ -24,7 +24,7 @@ const { Wallet, ethers } = require('ethers');
 
 const CLOB_HOST = 'https://clob.polymarket.com';
 const CHAIN_ID = 137;
-const POLYGON_RPC = 'https://polygon-rpc.com';
+const POLYGON_RPC = process.env.POLYGON_RPC || 'https://polygon-bor-rpc.publicnode.com';
 
 // Polymarket contract addresses on Polygon
 const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDCe on Polygon

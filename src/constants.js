@@ -8,7 +8,12 @@
 module.exports = {
   // ─── Network ──────────────────────────────────
   POLYGON_CHAIN_ID: 137,
-  POLYGON_RPC: 'https://polygon-rpc.com',
+  POLYGON_RPC: process.env.POLYGON_RPC || 'https://polygon-bor-rpc.publicnode.com',
+  POLYGON_RPC_FALLBACKS: [
+    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon.llamarpc.com',
+    'https://polygon-rpc.com',
+  ],
   USDC_ADDRESS: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
   USDC_DECIMALS: 6,
   CTF_EXCHANGE: '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',  // Polymarket CTF exchange
