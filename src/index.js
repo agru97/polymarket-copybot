@@ -25,9 +25,46 @@ const { botState, STATES } = require('./state');
 const { validateConfig } = require('./validate-config');
 const C = require('./constants');
 
-// Equity tracking
-let currentEquity = parseFloat(process.env.MAX_TOTAL_EXPOSURE) || 110;
-const STARTING_EQUITY = currentEquity;
+// Equity tracking — real balance fetched from chain on startup (see main())
+let currentEquity = parseFloat(process.env.MAX_TOTAL_EXPOSURE) || 110; // fallback until chain fetch
+let STARTING_EQUITY = currentEquity;
+
+// ─── Auto-size risk limits from on-chain balance ─────────────────
+// Only overrides values the user didn't explicitly set in .env.
+// Rationale: hardcoded defaults ($90 exposure, $70 stop-loss) break
+// for accounts with $16 or $500.  This scales them proportionally.
+function autoSizeRiskFromBalance(balance) {
+  if (balance <= 0) return; // chain fetch failed — keep .env defaults
+
+  const rules = [
+    // [envVar, configPath, percentage, minValue, description]
+    ['MAX_TOTAL_EXPOSURE', 'caps.maxTotalExposure', 1.00, 5, 'Max total exposure'],
+    ['EQUITY_STOP_LOSS',   'risk.equityStopLoss',   0.60, 3, 'Equity stop-loss floor'],
+    ['DAILY_LOSS_LIMIT',   'risk.dailyLossLimit',   0.15, 1, 'Daily loss limit'],
+    ['MAX_PER_TRADE',      'caps.maxPerTrade',       0.20, 1, 'Max per trade'],
+    ['MAX_GRINDER_TRADE',  'caps.maxGrinderTrade',   0.15, 1, 'Max grinder trade'],
+    ['MAX_EVENT_TRADE',    'caps.maxEventTrade',     0.20, 1, 'Max event trade'],
+  ];
+
+  let anyAutoSized = false;
+
+  for (const [envVar, path, pct, min, desc] of rules) {
+    // Skip if user explicitly set this in .env
+    if (process.env[envVar]) continue;
+
+    const autoVal = Math.max(min, parseFloat((balance * pct).toFixed(2)));
+    const [section, key] = path.split('.');
+    config[section][key] = autoVal;
+    log.info(`  Auto-sized ${desc}: $${autoVal} (${(pct * 100).toFixed(0)}% of $${balance.toFixed(2)})`);
+    anyAutoSized = true;
+  }
+
+  if (anyAutoSized) {
+    log.info('  Override any value by setting it explicitly in .env');
+  } else {
+    log.info('All risk limits set manually in .env — no auto-sizing applied');
+  }
+}
 
 // Backoff state
 let backoffMs = 0;
@@ -201,7 +238,8 @@ async function runCycle() {
     }
 
     // Periodic equity update from chain (every 30 cycles ≈ 5 min)
-    if (botState._cycleCount % 30 === 0 && !config.bot.dryRun) {
+    // Always update — equity display should be accurate even in dry-run
+    if (botState._cycleCount % 30 === 0) {
       await updateEquityFromChain();
     }
 
@@ -252,6 +290,16 @@ async function main() {
 
   // Initialize CLOB client
   await trader.initClobClient();
+
+  // Fetch real equity from chain on startup (don't rely on MAX_TOTAL_EXPOSURE guess)
+  await updateEquityFromChain();
+  STARTING_EQUITY = currentEquity; // P&L calculated from real starting balance
+  log.info(`Starting equity: $${currentEquity.toFixed(2)} (on-chain USDC.e balance)`);
+
+  // ─── Auto-size risk limits from real balance ───────────────────
+  // Only auto-adjusts values the user hasn't explicitly set in .env.
+  // Percentages tuned for small-to-medium accounts ($10–$500).
+  autoSizeRiskFromBalance(currentEquity);
 
   // Start dashboard (with auth + controls + trader management)
   dashboard.start(getEquity, setEquity);

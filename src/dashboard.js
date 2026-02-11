@@ -318,16 +318,64 @@ function start(getEquity, setEquity) {
   });
 
   // ─────────────────────────────────
-  //  SETTINGS (v2.1)
+  //  SETTINGS (v2.1 → v2.4: full risk/cap editing)
   // ─────────────────────────────────
   app.patch('/api/settings', (req, res) => {
     try {
-      const { pollInterval } = req.body;
       const updated = {};
+      const changes = [];
 
-      if (pollInterval !== undefined) {
-        updated.pollInterval = hotConfig.setPollInterval(pollInterval);
-        db.logAudit(C.AUDIT_ACTIONS.SETTINGS_CHANGE, `pollInterval → ${updated.pollInterval}ms`, 'dashboard', req.ip);
+      // Poll interval
+      if (req.body.pollInterval !== undefined) {
+        updated.pollInterval = hotConfig.setPollInterval(req.body.pollInterval);
+        changes.push(`pollInterval → ${updated.pollInterval}ms`);
+      }
+
+      // ── Risk limits (write directly to live config) ──
+      const riskFields = {
+        dailyLossLimit:   { section: 'risk', key: 'dailyLossLimit',   min: 0.5, max: 100000 },
+        equityStopLoss:   { section: 'risk', key: 'equityStopLoss',   min: 0,   max: 100000 },
+        slippageTolerance:{ section: 'risk', key: 'slippageTolerance', min: 0.1, max: 20 },
+        minTradeSize:     { section: 'risk', key: 'minTradeSize',      min: 0.1, max: 100 },
+        minPrice:         { section: 'risk', key: 'minPrice',          min: 0.01, max: 0.5 },
+        maxPrice:         { section: 'risk', key: 'maxPrice',          min: 0.5,  max: 0.99 },
+      };
+
+      const capFields = {
+        maxPerTrade:      { section: 'caps', key: 'maxPerTrade',       min: 0.5, max: 100000 },
+        maxGrinderTrade:  { section: 'caps', key: 'maxGrinderTrade',   min: 0.5, max: 100000 },
+        maxEventTrade:    { section: 'caps', key: 'maxEventTrade',     min: 0.5, max: 100000 },
+        maxTotalExposure: { section: 'caps', key: 'maxTotalExposure',  min: 1,   max: 1000000 },
+        maxOpenPositions: { section: 'caps', key: 'maxOpenPositions',  min: 1,   max: 100, integer: true },
+      };
+
+      const allFields = { ...riskFields, ...capFields };
+
+      for (const [field, spec] of Object.entries(allFields)) {
+        if (req.body[field] !== undefined) {
+          let val = parseFloat(req.body[field]);
+          if (isNaN(val)) continue;
+          val = Math.max(spec.min, Math.min(spec.max, val));
+          if (spec.integer) val = Math.round(val);
+          config[spec.section][spec.key] = val;
+          updated[field] = val;
+          changes.push(`${field} → ${val}`);
+        }
+      }
+
+      // ── Sizing multipliers ──
+      if (req.body.grinderMultiplier !== undefined) {
+        const val = Math.max(0.01, Math.min(5, parseFloat(req.body.grinderMultiplier)));
+        if (!isNaN(val)) { config.sizing.grinderMultiplier = val; updated.grinderMultiplier = val; changes.push(`grinderMultiplier → ${val}`); }
+      }
+      if (req.body.eventMultiplier !== undefined) {
+        const val = Math.max(0.01, Math.min(5, parseFloat(req.body.eventMultiplier)));
+        if (!isNaN(val)) { config.sizing.eventMultiplier = val; updated.eventMultiplier = val; changes.push(`eventMultiplier → ${val}`); }
+      }
+
+      if (changes.length > 0) {
+        db.logAudit(C.AUDIT_ACTIONS.SETTINGS_CHANGE, changes.join(', '), 'dashboard', req.ip);
+        log.info(`Settings updated from dashboard: ${changes.join(', ')}`);
       }
 
       res.json({ success: true, ...updated });

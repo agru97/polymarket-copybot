@@ -132,8 +132,15 @@ tr:hover td{background:rgba(99,102,241,0.04)}
 .toast-err{background:rgba(239,68,68,0.9);color:#fff}
 
 /* Responsive */
-@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.chart-grid,.risk-bars{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.controls-info{margin-left:0;margin-top:8px}.add-form{flex-direction:column}.add-form input.addr{width:100%}}
+@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.chart-grid,.risk-bars{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.controls-info{margin-left:0;margin-top:8px}.add-form{flex-direction:column}.add-form input.addr{width:100%}.risk-section>div:last-child{grid-template-columns:1fr!important}}
 @media(max-width:480px){.cards{grid-template-columns:1fr}}
+
+/* Settings fields */
+.settings-field{margin-bottom:10px}
+.settings-field label{display:block;font-size:0.76em;color:var(--muted);margin-bottom:3px}
+.settings-input-row{display:flex;align-items:center;gap:4px}
+.settings-input-row span{font-size:0.82em;color:var(--muted)}
+.settings-input-row .inline-edit{width:90px}
 
 .loading{text-align:center;padding:40px;color:var(--muted);font-size:0.9em}
 .hidden{display:none!important}
@@ -232,6 +239,79 @@ tr:hover td{background:rgba(99,102,241,0.04)}
       <input type="number" class="inline-edit" id="pollIntervalInput" min="5" max="60" step="1" value="10">
       <span style="font-size:0.82em;color:var(--muted)">seconds</span>
       <button class="btn btn-accent btn-small" onclick="savePollInterval()">Save</button>
+    </div>
+  </div>
+
+  <!-- Risk & Sizing Settings (v2.4) -->
+  <div class="risk-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">Risk & Sizing Settings</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:0.72em;color:var(--muted)" id="settingsAutoLabel">Auto-sized from balance</span>
+        <button class="btn btn-accent btn-small" onclick="saveAllSettings()">Save Changes</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <!-- Caps -->
+      <div style="background:var(--surface2);border-radius:10px;padding:14px">
+        <div style="font-size:0.72em;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;font-weight:600">Trade Caps</div>
+        <div class="settings-field">
+          <label>Max Total Exposure</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_maxTotalExposure" min="1" step="1"></div>
+        </div>
+        <div class="settings-field">
+          <label>Max Grinder Trade</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_maxGrinderTrade" min="0.5" step="0.5"></div>
+        </div>
+        <div class="settings-field">
+          <label>Max Event Trade</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_maxEventTrade" min="0.5" step="0.5"></div>
+        </div>
+        <div class="settings-field">
+          <label>Max Open Positions</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_maxOpenPositions" min="1" max="50" step="1"></div>
+        </div>
+      </div>
+      <!-- Risk -->
+      <div style="background:var(--surface2);border-radius:10px;padding:14px">
+        <div style="font-size:0.72em;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;font-weight:600">Risk Limits</div>
+        <div class="settings-field">
+          <label>Daily Loss Limit</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_dailyLossLimit" min="0.5" step="0.5"></div>
+        </div>
+        <div class="settings-field">
+          <label>Equity Stop-Loss</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_equityStopLoss" min="0" step="1"></div>
+        </div>
+        <div class="settings-field">
+          <label>Slippage Tolerance</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_slippageTolerance" min="0.1" max="20" step="0.5"><span>%</span></div>
+        </div>
+        <div class="settings-field">
+          <label>Min Trade Size</label>
+          <div class="settings-input-row"><span>$</span><input type="number" class="inline-edit" id="s_minTradeSize" min="0.1" step="0.5"></div>
+        </div>
+      </div>
+      <!-- Sizing -->
+      <div style="background:var(--surface2);border-radius:10px;padding:14px">
+        <div style="font-size:0.72em;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;font-weight:600">Copy Sizing</div>
+        <div class="settings-field">
+          <label>Grinder Multiplier</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_grinderMultiplier" min="0.01" max="5" step="0.05"><span>×</span></div>
+        </div>
+        <div class="settings-field">
+          <label>Event Multiplier</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_eventMultiplier" min="0.01" max="5" step="0.05"><span>×</span></div>
+        </div>
+        <div class="settings-field">
+          <label>Min Price</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_minPrice" min="0.01" max="0.5" step="0.01"></div>
+        </div>
+        <div class="settings-field">
+          <label>Max Price</label>
+          <div class="settings-input-row"><input type="number" class="inline-edit" id="s_maxPrice" min="0.5" max="0.99" step="0.01"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -366,10 +446,11 @@ function apiFetch(url, opts = {}) {
 // ─── Data Fetching ───
 async function fetchData() {
   try {
-    const [statsRes, tradesRes, tradersRes] = await Promise.all([
+    const [statsRes, tradesRes, tradersRes, configRes] = await Promise.all([
       apiFetch('/api/stats'),
       apiFetch('/api/trades?limit=100'),
       apiFetch('/api/traders'),
+      apiFetch('/api/config'),
     ]);
     if (statsRes.status === 401) {
       localStorage.removeItem('bot_token');
@@ -381,8 +462,10 @@ async function fetchData() {
     const data = await statsRes.json();
     allTrades = await tradesRes.json();
     const tradersData = await tradersRes.json();
+    const configData = await configRes.json();
     traderList = tradersData.traders || [];
     updateDashboard(data);
+    populateSettings(configData);
     renderTrades();
     renderTraderTable();
     document.getElementById('headerSub').textContent = `Updated ${new Date().toLocaleTimeString()} | Cycle #${data.bot?.cycleCount || 0}`;
@@ -468,6 +551,59 @@ async function savePollInterval() {
     });
     const data = await res.json();
     if (data.success) showToast(`Poll interval: ${val/1000}s`, 'ok');
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+// ─── Risk & Sizing Settings ───
+function populateSettings(cfg) {
+  if (!cfg) return;
+  const fields = {
+    s_maxTotalExposure: cfg.caps?.maxTotalExposure,
+    s_maxGrinderTrade: cfg.caps?.maxGrinderTrade,
+    s_maxEventTrade: cfg.caps?.maxEventTrade,
+    s_maxOpenPositions: cfg.caps?.maxOpenPositions,
+    s_dailyLossLimit: cfg.risk?.dailyLossLimit,
+    s_equityStopLoss: cfg.risk?.equityStopLoss,
+    s_slippageTolerance: cfg.risk?.slippageTolerance,
+    s_minTradeSize: cfg.risk?.minTradeSize,
+    s_grinderMultiplier: cfg.sizing?.grinderMultiplier,
+    s_eventMultiplier: cfg.sizing?.eventMultiplier,
+    s_minPrice: cfg.risk?.minPrice,
+    s_maxPrice: cfg.risk?.maxPrice,
+  };
+  for (const [id, val] of Object.entries(fields)) {
+    const el = document.getElementById(id);
+    if (el && val !== undefined) el.value = val;
+  }
+}
+
+async function saveAllSettings() {
+  const body = {
+    maxTotalExposure: parseFloat(document.getElementById('s_maxTotalExposure').value),
+    maxGrinderTrade: parseFloat(document.getElementById('s_maxGrinderTrade').value),
+    maxEventTrade: parseFloat(document.getElementById('s_maxEventTrade').value),
+    maxOpenPositions: parseInt(document.getElementById('s_maxOpenPositions').value),
+    dailyLossLimit: parseFloat(document.getElementById('s_dailyLossLimit').value),
+    equityStopLoss: parseFloat(document.getElementById('s_equityStopLoss').value),
+    slippageTolerance: parseFloat(document.getElementById('s_slippageTolerance').value),
+    minTradeSize: parseFloat(document.getElementById('s_minTradeSize').value),
+    grinderMultiplier: parseFloat(document.getElementById('s_grinderMultiplier').value),
+    eventMultiplier: parseFloat(document.getElementById('s_eventMultiplier').value),
+    minPrice: parseFloat(document.getElementById('s_minPrice').value),
+    maxPrice: parseFloat(document.getElementById('s_maxPrice').value),
+  };
+  try {
+    const res = await apiFetch('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Settings saved', 'ok');
+      fetchData();
+    } else {
+      showToast(data.error || 'Save failed', 'err');
+    }
   } catch (err) { showToast(err.message, 'err'); }
 }
 
