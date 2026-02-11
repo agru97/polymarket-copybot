@@ -79,16 +79,24 @@ function load() {
 }
 
 /**
- * Persist hot config to disk
+ * Persist hot config to disk using atomic write (temp + rename)
+ * Prevents corruption if process crashes during write (audit fix)
  */
 function save() {
   try {
     hotConfig.updatedAt = new Date().toISOString();
+    hotConfig.version = (hotConfig.version || 0) + 1;
     const dir = path.dirname(HOT_CONFIG_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(HOT_CONFIG_PATH, JSON.stringify(hotConfig, null, 2));
+
+    // Atomic write: write to temp file, then rename (rename is atomic on most FS)
+    const tmpPath = HOT_CONFIG_PATH + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(hotConfig, null, 2));
+    fs.renameSync(tmpPath, HOT_CONFIG_PATH);
   } catch (err) {
     log.error(`Hot config save failed: ${err.message}`);
+    // Clean up temp file if rename failed
+    try { fs.unlinkSync(HOT_CONFIG_PATH + '.tmp'); } catch { /* ok */ }
   }
 }
 

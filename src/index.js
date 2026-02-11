@@ -22,6 +22,8 @@ const risk = require('./risk');
 const dashboard = require('./dashboard');
 const log = require('./logger');
 const { botState, STATES } = require('./state');
+const { validateConfig } = require('./validate-config');
+const C = require('./constants');
 
 // Equity tracking
 let currentEquity = parseFloat(process.env.MAX_TOTAL_EXPOSURE) || 110;
@@ -32,6 +34,84 @@ let backoffMs = 0;
 const MIN_BACKOFF = 0;
 const MAX_BACKOFF = 120000; // 2 min max
 const BACKOFF_MULTIPLIER = 2;
+
+// ─── Trade Aggregation Buffer ───────────────────
+// Novus-Tech pattern: batch small trades for the same market within a window
+const AGGREGATION_ENABLED = (process.env.TRADE_AGGREGATION || 'false').toLowerCase() === 'true';
+const AGGREGATION_WINDOW_MS = parseInt(process.env.TRADE_AGGREGATION_WINDOW_MS || '30000'); // 30s
+const AGGREGATION_MIN_USD = parseFloat(process.env.TRADE_AGGREGATION_MIN_USD || '2');
+const aggregationBuffer = new Map(); // key → { signals: [], firstSeen: timestamp }
+const MAX_BUFFER_SIGNALS = 500;  // Safety cap — prevent memory exhaustion
+const MAX_PER_KEY = 50;          // Max signals per aggregation key
+
+function getAggregationKey(signal) {
+  return `${signal.traderAddress}:${signal.marketId}:${signal.tokenId}:${signal.side}`;
+}
+
+function addToAggregation(signal) {
+  // Global safety check
+  let totalSignals = 0;
+  for (const agg of aggregationBuffer.values()) totalSignals += agg.signals.length;
+  if (totalSignals >= MAX_BUFFER_SIGNALS) {
+    log.warn(`Aggregation buffer full (${totalSignals}) — executing signal directly`);
+    return false; // Caller should execute immediately
+  }
+
+  const key = getAggregationKey(signal);
+  const existing = aggregationBuffer.get(key);
+  if (existing) {
+    if (existing.signals.length >= MAX_PER_KEY) {
+      log.warn(`Per-key aggregation limit for ${key.slice(0, 30)}... — executing early`);
+      return false;
+    }
+    existing.signals.push(signal);
+    existing.totalSize += signal.size;
+    // Use weighted average price, not just latest (audit fix)
+    existing.totalCost = (existing.totalCost || 0) + (signal.size * signal.price);
+    existing.latestPrice = existing.totalCost / existing.totalSize;
+  } else {
+    aggregationBuffer.set(key, {
+      signals: [signal],
+      totalSize: signal.size,
+      totalCost: signal.size * signal.price,
+      latestPrice: signal.price,
+      firstSeen: Date.now(),
+    });
+  }
+  return true;
+}
+
+function getReadyAggregations() {
+  const ready = [];
+  const now = Date.now();
+
+  for (const [key, agg] of aggregationBuffer.entries()) {
+    if (now - agg.firstSeen >= AGGREGATION_WINDOW_MS) {
+      if (agg.totalSize >= AGGREGATION_MIN_USD) {
+        // Merge into a single signal with aggregated size
+        const baseSignal = { ...agg.signals[0] };
+        baseSignal.size = agg.totalSize;
+        baseSignal.price = agg.latestPrice;
+        baseSignal.notes = `Aggregated ${agg.signals.length} trades ($${agg.totalSize.toFixed(2)} total)`;
+        ready.push(baseSignal);
+      } else {
+        // Execute small trades individually instead of silently dropping (audit fix)
+        log.debug(`Aggregation below min: $${agg.totalSize.toFixed(2)} — executing ${agg.signals.length} individual signal(s)`);
+        for (const sig of agg.signals) {
+          ready.push(sig);
+        }
+      }
+      aggregationBuffer.delete(key);
+    }
+    // Safety: expire any entries older than 2x the window
+    else if (now - agg.firstSeen > AGGREGATION_WINDOW_MS * 2) {
+      log.warn(`Force-expiring stale aggregation: ${key.slice(0, 30)}...`);
+      aggregationBuffer.delete(key);
+    }
+  }
+
+  return ready;
+}
 
 function getEquity() { return currentEquity; }
 function setEquity(val) { currentEquity = val; }
@@ -55,6 +135,14 @@ async function runCycle() {
     return;
   }
 
+  // Pre-cycle equity stop-loss check (audit fix: catch this BEFORE scanning)
+  if (currentEquity <= config.risk.equityStopLoss) {
+    log.error(`EQUITY STOP-LOSS: $${currentEquity.toFixed(2)} <= floor $${config.risk.equityStopLoss} — auto-pausing bot`);
+    db.logAudit(C.AUDIT_ACTIONS.EQUITY_STOP_LOSS, `Equity $${currentEquity.toFixed(2)} <= floor $${config.risk.equityStopLoss}`);
+    botState.pause(`Equity stop-loss triggered: $${currentEquity.toFixed(2)} below $${config.risk.equityStopLoss} floor`);
+    return;
+  }
+
   try {
     // Scan all traders for new signals
     const signals = await monitor.scanAllTraders();
@@ -63,8 +151,39 @@ async function runCycle() {
       log.info(`Found ${signals.length} signal(s)`);
     }
 
+    // Determine which signals to execute now vs buffer
+    let signalsToExecute = [];
+
+    if (AGGREGATION_ENABLED) {
+      for (const signal of signals) {
+        if (signal.type === 'CLOSE') {
+          // Always execute close signals immediately
+          signalsToExecute.push(signal);
+        } else if (signal.size < AGGREGATION_MIN_USD) {
+          // Small trade → try to buffer for aggregation
+          const buffered = addToAggregation(signal);
+          if (buffered) {
+            log.debug(`Buffered small trade: $${signal.size.toFixed(2)} for ${(signal.marketName || signal.marketId).slice(0, 30)}`);
+          } else {
+            signalsToExecute.push(signal); // Buffer full — execute directly
+          }
+        } else {
+          // Large enough → execute immediately
+          signalsToExecute.push(signal);
+        }
+      }
+      // Check for ready aggregated trades
+      const readyAggs = getReadyAggregations();
+      if (readyAggs.length > 0) {
+        log.info(`${readyAggs.length} aggregated trade(s) ready`);
+        signalsToExecute.push(...readyAggs);
+      }
+    } else {
+      signalsToExecute = signals;
+    }
+
     // Process each signal
-    for (const signal of signals) {
+    for (const signal of signalsToExecute) {
       if (!botState.canTrade) {
         log.warn('Bot paused mid-cycle — stopping signal processing');
         break;
@@ -112,11 +231,18 @@ async function main() {
   // Startup banner
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
-  console.log(`  ║  POLYMARKET COPY BOT v2.1                    ║`);
+  console.log(`  ║  POLYMARKET COPY BOT v2.3                    ║`);
   console.log(`  ║  Mode: ${config.bot.dryRun ? 'DRY RUN (simulation)     ' : 'LIVE TRADING ⚡          '}  ║`);
   console.log(`  ║  Dashboard: http://0.0.0.0:${config.dashboard.port}              ║`);
   console.log('  ╚══════════════════════════════════════════════╝');
   console.log('');
+
+  // Validate configuration before anything else
+  const configResult = validateConfig();
+  if (!configResult.valid) {
+    log.error('Configuration validation failed — cannot start bot');
+    process.exit(1);
+  }
 
   // Initialize database
   db.init();
@@ -148,6 +274,7 @@ async function main() {
 
   // Set state to running
   botState.start();
+  db.logAudit(C.AUDIT_ACTIONS.BOT_START, `${config.bot.dryRun ? 'DRY RUN' : 'LIVE'} mode, ${activeTraders.length} traders`);
   log.info('Bot started. Press Ctrl+C to stop.\n');
 
   // Main loop — uses dynamic poll interval from hot-config

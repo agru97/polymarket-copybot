@@ -23,13 +23,25 @@ const db = require('./db');
 const risk = require('./risk');
 const log = require('./logger');
 const { botState } = require('./state');
+const C = require('./constants');
 
 // Generate session token from password
 const SESSION_TOKEN = crypto
   .createHash('sha256')
-  .update(config.dashboard.password + 'polymarket-bot-salt')
+  .update(config.dashboard.password + C.SESSION_SALT)
   .digest('hex')
   .slice(0, 32);
+
+// CSRF tokens: per-session tokens to prevent cross-site request forgery
+const csrfTokens = new Map(); // sessionToken → csrfToken
+function generateCsrfToken(sessionToken) {
+  const token = crypto.randomBytes(C.CSRF_TOKEN_LENGTH).toString('hex');
+  csrfTokens.set(sessionToken, token);
+  return token;
+}
+function validateCsrf(sessionToken, csrfToken) {
+  return csrfTokens.get(sessionToken) === csrfToken;
+}
 
 // Simple rate limiter
 const rateLimits = new Map();
@@ -75,10 +87,31 @@ function start(getEquity, setEquity) {
 
   // Rate limiting
   app.use((req, res, next) => {
-    if (rateLimit(req.ip, 120)) {
+    if (rateLimit(req.ip, C.RATE_LIMIT_PER_MINUTE)) {
       return res.status(429).json({ error: 'Too many requests' });
     }
     next();
+  });
+
+  // CSRF protection on state-changing methods
+  app.use('/api', (req, res, next) => {
+    // Skip CSRF for safe methods (GET, HEAD, OPTIONS) and login
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/api/login') {
+      return next();
+    }
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    const csrfToken = req.headers['x-csrf-token'] || req.body?._csrf;
+    if (token && csrfToken && validateCsrf(token, csrfToken)) {
+      return next();
+    }
+    // Allow if CSRF not yet provisioned (first request after login)
+    if (token === SESSION_TOKEN && !csrfTokens.has(token)) {
+      return next();
+    }
+    if (csrfTokens.has(token)) {
+      return res.status(403).json({ error: 'Invalid CSRF token' });
+    }
+    next(); // No CSRF required if no session yet
   });
 
   // Static files (dashboard UI)
@@ -92,9 +125,23 @@ function start(getEquity, setEquity) {
   // ─────────────────────────────────
   app.post('/api/login', (req, res) => {
     const { password } = req.body;
-    if (password === config.dashboard.password) {
-      res.json({ token: SESSION_TOKEN });
+    if (!password || typeof password !== 'string') {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    // Constant-time comparison to prevent timing attacks (audit fix)
+    const inputHash = crypto
+      .createHash('sha256')
+      .update(password + 'polymarket-bot-salt')
+      .digest('hex')
+      .slice(0, 32);
+    const tokenBuf = Buffer.from(SESSION_TOKEN, 'utf8');
+    const inputBuf = Buffer.from(inputHash, 'utf8');
+    if (tokenBuf.length === inputBuf.length && crypto.timingSafeEqual(tokenBuf, inputBuf)) {
+      const csrfToken = generateCsrfToken(SESSION_TOKEN);
+      db.logAudit(C.AUDIT_ACTIONS.LOGIN_SUCCESS, '', 'dashboard', req.ip);
+      res.json({ token: SESSION_TOKEN, csrfToken });
     } else {
+      db.logAudit(C.AUDIT_ACTIONS.LOGIN_FAILED, '', 'dashboard', req.ip);
       res.status(401).json({ error: 'Invalid password' });
     }
   });
@@ -183,12 +230,14 @@ function start(getEquity, setEquity) {
   app.post('/api/control/pause', (req, res) => {
     const reason = req.body.reason || 'Paused from dashboard';
     botState.pause(reason);
+    db.logAudit(C.AUDIT_ACTIONS.BOT_PAUSE, reason, 'dashboard', req.ip);
     log.warn(`BOT PAUSED from dashboard: ${reason}`);
     res.json({ success: true, state: botState.state });
   });
 
   app.post('/api/control/resume', (req, res) => {
     botState.resume();
+    db.logAudit(C.AUDIT_ACTIONS.BOT_RESUME, '', 'dashboard', req.ip);
     log.info('BOT RESUMED from dashboard');
     res.json({ success: true, state: botState.state });
   });
@@ -196,6 +245,7 @@ function start(getEquity, setEquity) {
   app.post('/api/control/emergency-stop', (req, res) => {
     const reason = req.body.reason || 'Emergency stop from dashboard';
     botState.emergencyStop(reason);
+    db.logAudit(C.AUDIT_ACTIONS.BOT_EMERGENCY_STOP, reason, 'dashboard', req.ip);
     log.error(`EMERGENCY STOP from dashboard: ${reason}`);
     res.json({ success: true, state: botState.state });
   });
@@ -224,6 +274,7 @@ function start(getEquity, setEquity) {
       const result = hotConfig.addTrader(address, bucket, label);
       if (result.error) return res.status(400).json(result);
 
+      db.logAudit(C.AUDIT_ACTIONS.TRADER_ADD, `${address.slice(0, 10)}... [${bucket}]`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -243,6 +294,7 @@ function start(getEquity, setEquity) {
       const result = hotConfig.updateTrader(address, updates);
       if (result.error) return res.status(404).json(result);
 
+      db.logAudit(C.AUDIT_ACTIONS.TRADER_UPDATE, `${address.slice(0, 10)}... → ${JSON.stringify(updates)}`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -256,6 +308,7 @@ function start(getEquity, setEquity) {
       const result = hotConfig.removeTrader(address);
       if (result.error) return res.status(404).json(result);
 
+      db.logAudit(C.AUDIT_ACTIONS.TRADER_REMOVE, `${address.slice(0, 10)}...`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -272,9 +325,23 @@ function start(getEquity, setEquity) {
 
       if (pollInterval !== undefined) {
         updated.pollInterval = hotConfig.setPollInterval(pollInterval);
+        db.logAudit(C.AUDIT_ACTIONS.SETTINGS_CHANGE, `pollInterval → ${updated.pollInterval}ms`, 'dashboard', req.ip);
       }
 
       res.json({ success: true, ...updated });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────
+  //  AUDIT LOG (v2.3)
+  // ─────────────────────────────────
+  app.get('/api/audit-log', (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+      const auditLog = db.getAuditLog(limit);
+      res.json(auditLog);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

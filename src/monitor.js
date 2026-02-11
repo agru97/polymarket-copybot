@@ -18,13 +18,15 @@
 const hotConfig = require('./hot-config');
 const db = require('./db');
 const log = require('./logger');
+const C = require('./constants');
 
-const POLYMARKET_DATA_API = 'https://data-api.polymarket.com';
-const POLYMARKET_CLOB_API = 'https://clob.polymarket.com';
+const POLYMARKET_DATA_API = C.POLYMARKET_DATA_API;
+const POLYMARKET_CLOB_API = C.POLYMARKET_CLOB_API;
 
-// Deduplication: track recently processed signals to prevent double trades
-const recentSignals = new Map(); // key → timestamp
-const SIGNAL_DEDUP_TTL = 5 * 60 * 1000; // 5 minutes
+// Deduplication: persistent in SQLite (survives restarts — Novus-Tech level)
+// In-memory cache for hot-path performance, backed by DB for durability
+const dedupCache = new Map(); // hot cache — checked first
+const SIGNAL_DEDUP_TTL = C.SIGNAL_DEDUP_TTL_MS;
 
 // Track if this is the first scan per trader (skip initial positions)
 const firstScanDone = new Set();
@@ -67,7 +69,7 @@ async function fetchTraderPositions(traderAddress) {
     return Array.isArray(data) ? data : [];
   } catch (err) {
     log.error(`Failed to fetch positions for ${traderAddress.slice(0, 10)}...: ${err.message}`);
-    return [];
+    return null; // Return null on failure — NOT empty array (prevents false liquidation signals)
   }
 }
 
@@ -89,34 +91,42 @@ function signalKey(traderAddress, marketId, tokenId, type) {
 
 /**
  * Check if a signal was already processed recently
+ * Uses in-memory cache (fast) backed by SQLite (durable across restarts)
  */
 function isDuplicate(key) {
-  const lastSeen = recentSignals.get(key);
-  if (!lastSeen) return false;
-  if (Date.now() - lastSeen > SIGNAL_DEDUP_TTL) {
-    recentSignals.delete(key);
-    return false;
+  // Hot cache first (avoid DB hit on every check)
+  const lastSeen = dedupCache.get(key);
+  if (lastSeen) {
+    if (Date.now() - lastSeen > SIGNAL_DEDUP_TTL) {
+      dedupCache.delete(key);
+      return false;
+    }
+    return true;
   }
-  return true;
+  // Fall back to persistent store (catches signals from before restart)
+  return db.isDedupRecorded(key);
 }
 
 /**
- * Mark a signal as processed
+ * Mark a signal as processed (both cache and DB)
  */
 function markProcessed(key) {
-  recentSignals.set(key, Date.now());
+  dedupCache.set(key, Date.now());
+  db.recordDedup(key, SIGNAL_DEDUP_TTL);
 }
 
 /**
- * Clean up expired dedup entries
+ * Clean up expired dedup entries (both cache and DB)
  */
 function cleanupDedup() {
   const now = Date.now();
-  for (const [key, ts] of recentSignals.entries()) {
+  for (const [key, ts] of dedupCache.entries()) {
     if (now - ts > SIGNAL_DEDUP_TTL) {
-      recentSignals.delete(key);
+      dedupCache.delete(key);
     }
   }
+  // Also clean DB (less frequent, but keeps it tidy)
+  db.cleanupExpiredDedup();
 }
 
 /**
@@ -128,6 +138,14 @@ async function detectChanges(traderAddress) {
   if (!bucket) return [];
 
   const currentPositions = await fetchTraderPositions(traderAddress);
+
+  // CRITICAL FIX: If API failed, skip this trader entirely
+  // Returning null means "I don't know" — do NOT generate signals from ignorance
+  if (currentPositions === null) {
+    log.warn(`Skipping ${traderAddress.slice(0, 10)}... — API unavailable (preventing false signals)`);
+    return [];
+  }
+
   const knownPositions = db.getTraderPositions(traderAddress);
   const knownMap = new Map(knownPositions.map(p => [`${p.market_id}:${p.token_id}`, p]));
   const signals = [];
@@ -171,6 +189,20 @@ async function detectChanges(traderAddress) {
         });
         markProcessed(dedupKey);
         log.info(`INCREASE: ${traderAddress.slice(0, 10)}... +$${increase.toFixed(2)} on ${(pos.title || marketId).slice(0, 50)}`);
+      }
+    } else if (size < known.size * 0.85 && !isFirstScan) {
+      // Position DECREASED by >15% (partial close detection — audit fix)
+      const decrease = known.size - size;
+      const dedupKey = signalKey(traderAddress, marketId, tokenId, `DEC_${Math.floor(size)}`);
+      if (!isDuplicate(dedupKey)) {
+        signals.push({
+          type: 'CLOSE', traderAddress, bucket, marketId, tokenId, side,
+          size: decrease, price,
+          marketName: pos.title || pos.question || '',
+          isPartialClose: true,
+        });
+        markProcessed(dedupKey);
+        log.info(`PARTIAL CLOSE: ${traderAddress.slice(0, 10)}... -$${decrease.toFixed(2)} on ${(pos.title || marketId).slice(0, 50)}`);
       }
     }
 
@@ -243,8 +275,8 @@ async function scanAllTraders() {
     }
   }
 
-  // Periodic cleanup
-  if (Math.random() < 0.1) cleanupDedup();
+  // Deterministic cleanup (every scan, cheap since we check timestamps)
+  cleanupDedup();
 
   return allSignals;
 }
