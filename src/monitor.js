@@ -1,9 +1,13 @@
 /**
- * Trade Monitor v2.0
+ * Trade Monitor v2.1
  *
  * Watches target traders on Polymarket and detects position changes.
  *
- * Improvements over v1:
+ * v2.1 changes:
+ *   - Dynamic trader list from hot-config (add/remove/toggle from dashboard)
+ *   - Per-trader bucket/multiplier from hot-config
+ *
+ * Inherited from v2.0:
  *   - Signal deduplication (prevents double-trades)
  *   - Retry with exponential backoff per trader
  *   - Parallel fetching with concurrency limit
@@ -11,7 +15,7 @@
  *   - Stale signal filtering (ignores old positions on first scan)
  */
 
-const { config, getBucket } = require('./config');
+const hotConfig = require('./hot-config');
 const db = require('./db');
 const log = require('./logger');
 
@@ -24,9 +28,6 @@ const SIGNAL_DEDUP_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Track if this is the first scan per trader (skip initial positions)
 const firstScanDone = new Set();
-
-// Retry state per trader
-const traderRetries = new Map();
 
 /**
  * Fetch with retry and exponential backoff
@@ -120,9 +121,10 @@ function cleanupDedup() {
 
 /**
  * Detect position changes for a single trader
+ * Now uses hot-config for bucket lookup instead of static config
  */
 async function detectChanges(traderAddress) {
-  const bucket = getBucket(traderAddress);
+  const bucket = hotConfig.getBucketForTrader(traderAddress);
   if (!bucket) return [];
 
   const currentPositions = await fetchTraderPositions(traderAddress);
@@ -144,7 +146,6 @@ async function detectChanges(traderAddress) {
     if (!known) {
       // New position detected
       if (isFirstScan) {
-        // First scan — just record existing positions, don't generate signals
         log.debug(`First scan: recording existing position for ${traderAddress.slice(0, 10)}... on ${marketId.slice(0, 20)}`);
       } else {
         const dedupKey = signalKey(traderAddress, marketId, tokenId, 'NEW');
@@ -203,12 +204,18 @@ async function detectChanges(traderAddress) {
 }
 
 /**
- * Scan all traders with concurrency limit
+ * Scan all ACTIVE traders with concurrency limit
+ * Now reads from hot-config dynamically each cycle
  */
 async function scanAllTraders() {
-  const allTraders = [...config.traders.grinders, ...config.traders.events];
+  const allTraders = hotConfig.getActiveAddresses();
   const allSignals = [];
   const CONCURRENCY = 3; // Max parallel requests
+
+  if (allTraders.length === 0) {
+    log.debug('No active traders configured — skipping scan');
+    return [];
+  }
 
   // Process in batches of CONCURRENCY
   for (let i = 0; i < allTraders.length; i += CONCURRENCY) {

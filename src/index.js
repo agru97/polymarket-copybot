@@ -1,7 +1,11 @@
 /**
- * Polymarket Copy Bot v2.0 — Production Entry Point
+ * Polymarket Copy Bot v2.1 — Production Entry Point
  *
- * Features:
+ * v2.1 changes:
+ *   - Hot-config integration (dynamic trader management)
+ *   - Dynamic poll interval from dashboard
+ *
+ * Inherited from v2.0:
  *   - State-managed lifecycle (pause/resume/emergency stop)
  *   - Exponential backoff on API failures
  *   - Graceful shutdown with open order cleanup
@@ -10,6 +14,7 @@
  */
 
 const { config } = require('./config');
+const hotConfig = require('./hot-config');
 const db = require('./db');
 const monitor = require('./monitor');
 const trader = require('./trader');
@@ -107,7 +112,7 @@ async function main() {
   // Startup banner
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
-  console.log(`  ║  POLYMARKET COPY BOT v2.0                    ║`);
+  console.log(`  ║  POLYMARKET COPY BOT v2.1                    ║`);
   console.log(`  ║  Mode: ${config.bot.dryRun ? 'DRY RUN (simulation)     ' : 'LIVE TRADING ⚡          '}  ║`);
   console.log(`  ║  Dashboard: http://0.0.0.0:${config.dashboard.port}              ║`);
   console.log('  ╚══════════════════════════════════════════════╝');
@@ -116,32 +121,39 @@ async function main() {
   // Initialize database
   db.init();
 
+  // Initialize hot config (loads traders from file or seeds from .env)
+  hotConfig.load();
+
   // Initialize CLOB client
   await trader.initClobClient();
 
-  // Start dashboard (with auth + controls)
+  // Start dashboard (with auth + controls + trader management)
   dashboard.start(getEquity, setEquity);
 
-  // Log config summary
-  const allTraders = [...config.traders.grinders, ...config.traders.events];
-  log.info(`Monitoring ${allTraders.length} trader(s):`);
-  config.traders.grinders.forEach(t =>
-    log.info(`  [GRINDER] ${t.slice(0, 10)}... (${config.sizing.grinderMultiplier * 100}%, max $${config.caps.maxGrinderTrade})`)
-  );
-  config.traders.events.forEach(t =>
-    log.info(`  [EVENT]   ${t.slice(0, 10)}... (${config.sizing.eventMultiplier * 100}%, max $${config.caps.maxEventTrade})`)
-  );
+  // Log config summary (now from hot-config)
+  const activeTraders = hotConfig.getActiveTraders();
+  log.info(`Monitoring ${activeTraders.length} active trader(s):`);
+  activeTraders.forEach(t => {
+    const label = t.label ? ` "${t.label}"` : '';
+    log.info(`  [${t.bucket.toUpperCase()}] ${t.address.slice(0, 10)}...${label} (${(t.multiplier * 100).toFixed(0)}%, max $${t.maxTrade})`);
+  });
+
+  const disabledCount = hotConfig.getTraders().length - activeTraders.length;
+  if (disabledCount > 0) {
+    log.info(`  (${disabledCount} trader(s) disabled)`);
+  }
+
   log.info(`Risk: daily loss $${config.risk.dailyLossLimit}, equity floor $${config.risk.equityStopLoss}, max exposure $${config.caps.maxTotalExposure}`);
-  log.info(`Poll interval: ${config.bot.pollInterval / 1000}s`);
+  log.info(`Poll interval: ${hotConfig.getPollInterval() / 1000}s`);
 
   // Set state to running
   botState.start();
   log.info('Bot started. Press Ctrl+C to stop.\n');
 
-  // Main loop
+  // Main loop — uses dynamic poll interval from hot-config
   while (!botState.isStopped) {
     await runCycle();
-    const waitMs = config.bot.pollInterval + backoffMs;
+    const waitMs = hotConfig.getPollInterval() + backoffMs;
     await new Promise(r => setTimeout(r, waitMs));
   }
 

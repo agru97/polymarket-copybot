@@ -1,6 +1,6 @@
 {
   "name": "polymarket-copybot",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Self-hosted Polymarket copy trading bot with web dashboard",
   "main": "src/index.js",
   "scripts": {

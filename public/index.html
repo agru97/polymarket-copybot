@@ -44,6 +44,10 @@ body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:var(--bg)
 .btn-resume{background:rgba(16,185,129,0.2);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
 .btn-stop{background:rgba(239,68,68,0.2);color:var(--red);border:1px solid rgba(239,68,68,0.3)}
 .btn-stop:hover{background:rgba(239,68,68,0.35)}
+.btn-accent{background:rgba(99,102,241,0.2);color:var(--accent);border:1px solid rgba(99,102,241,0.3)}
+.btn-small{padding:5px 12px;font-size:0.76em}
+.btn-danger{background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.btn-muted{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
 .controls-info{margin-left:auto;font-size:0.78em;color:var(--muted)}
 
 /* Cards */
@@ -90,7 +94,30 @@ tr:hover td{background:rgba(99,102,241,0.04)}
 .tag-failed{background:rgba(239,68,68,0.15);color:var(--red)}
 .tag-slippage_blocked{background:rgba(245,158,11,0.15);color:var(--yellow)}
 
-/* Trader cards */
+/* Trader management section */
+.trader-mgmt{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.trader-mgmt-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.add-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px;background:var(--surface2);border-radius:10px;margin-bottom:16px}
+.add-form input,.add-form select{padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.85em;outline:none}
+.add-form input:focus,.add-form select:focus{border-color:var(--accent)}
+.add-form input.addr{width:370px;font-family:'JetBrains Mono',monospace;font-size:0.8em}
+.add-form input.lbl{width:130px}
+.trader-table{width:100%}
+.trader-table td{vertical-align:middle}
+.addr-cell{font-family:'JetBrains Mono',monospace;font-size:0.82em;color:var(--accent)}
+.toggle-switch{position:relative;width:36px;height:20px;cursor:pointer}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--surface2);border-radius:10px;transition:0.2s;border:1px solid var(--border)}
+.toggle-slider:before{content:'';position:absolute;height:14px;width:14px;left:2px;bottom:2px;background:var(--muted);border-radius:50%;transition:0.2s}
+.toggle-switch input:checked+.toggle-slider{background:rgba(16,185,129,0.3);border-color:rgba(16,185,129,0.5)}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(16px);background:var(--green)}
+.inline-edit{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;width:65px;font-size:0.82em;text-align:center;outline:none}
+.inline-edit:focus{border-color:var(--accent)}
+.settings-row{display:flex;gap:16px;align-items:center;padding:12px 14px;background:var(--surface2);border-radius:10px;margin-top:16px}
+.settings-row label{font-size:0.82em;color:var(--muted);white-space:nowrap}
+.settings-row input{width:80px}
+
+/* Trader performance cards */
 .trader-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .trader-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px}
 .trader-addr{font-family:'JetBrains Mono',monospace;font-size:0.82em;color:var(--accent)}
@@ -98,8 +125,14 @@ tr:hover td{background:rgba(99,102,241,0.04)}
 .trader-stat{font-size:0.82em}
 .trader-stat span{display:block;font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
 
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:10px;font-size:0.85em;font-weight:500;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast-ok{background:rgba(16,185,129,0.9);color:#fff}
+.toast-err{background:rgba(239,68,68,0.9);color:#fff}
+
 /* Responsive */
-@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.chart-grid,.risk-bars{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.controls-info{margin-left:0;margin-top:8px}}
+@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.chart-grid,.risk-bars{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.controls-info{margin-left:0;margin-top:8px}.add-form{flex-direction:column}.add-form input.addr{width:100%}}
 @media(max-width:480px){.cards{grid-template-columns:1fr}}
 
 .loading{text-align:center;padding:40px;color:var(--muted);font-size:0.9em}
@@ -107,6 +140,9 @@ tr:hover td{background:rgba(99,102,241,0.04)}
 </style>
 </head>
 <body>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
 
 <!-- Login Screen -->
 <div class="login-overlay" id="loginOverlay">
@@ -140,18 +176,63 @@ tr:hover td{background:rgba(99,102,241,0.04)}
     <button class="btn btn-pause" onclick="controlBot('pause')" id="btnPause">Pause</button>
     <button class="btn btn-resume" onclick="controlBot('resume')" id="btnResume">Resume</button>
     <button class="btn btn-stop" onclick="if(confirm('Emergency stop the bot? This will halt ALL trading until you restart.'))controlBot('emergency-stop')">Emergency Stop</button>
-    <div class="controls-info" id="controlsInfo">—</div>
+    <div class="controls-info" id="controlsInfo"></div>
   </div>
 
   <!-- KPI Cards -->
   <div class="cards">
-    <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="equity">$—</div><div class="card-sub" id="equitySub">—</div></div>
-    <div class="card"><div class="card-label">Total P&L</div><div class="card-value" id="totalPnl">$—</div><div class="card-sub" id="pnlSub">—</div></div>
-    <div class="card"><div class="card-label">Today's P&L</div><div class="card-value" id="dailyPnl">$—</div><div class="card-sub" id="dailySub">—</div></div>
-    <div class="card"><div class="card-label">Win Rate</div><div class="card-value accent" id="winRate">—%</div><div class="card-sub" id="winSub">—</div></div>
-    <div class="card"><div class="card-label">Positions</div><div class="card-value" id="openPos">—</div><div class="card-sub" id="posSub">—</div></div>
-    <div class="card"><div class="card-label">Trades</div><div class="card-value accent" id="totalTrades">—</div><div class="card-sub" id="tradesSub">—</div></div>
-    <div class="card"><div class="card-label">Uptime</div><div class="card-value blue" id="uptime">—</div><div class="card-sub" id="uptimeSub">—</div></div>
+    <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="equity">$--</div><div class="card-sub" id="equitySub"></div></div>
+    <div class="card"><div class="card-label">Total P&L</div><div class="card-value" id="totalPnl">$--</div><div class="card-sub" id="pnlSub"></div></div>
+    <div class="card"><div class="card-label">Today's P&L</div><div class="card-value" id="dailyPnl">$--</div><div class="card-sub" id="dailySub"></div></div>
+    <div class="card"><div class="card-label">Win Rate</div><div class="card-value accent" id="winRate">--%</div><div class="card-sub" id="winSub"></div></div>
+    <div class="card"><div class="card-label">Positions</div><div class="card-value" id="openPos">--</div><div class="card-sub" id="posSub"></div></div>
+    <div class="card"><div class="card-label">Trades</div><div class="card-value accent" id="totalTrades">--</div><div class="card-sub" id="tradesSub"></div></div>
+    <div class="card"><div class="card-label">Uptime</div><div class="card-value blue" id="uptime">--</div><div class="card-sub" id="uptimeSub"></div></div>
+  </div>
+
+  <!-- Trader Management (v2.1) -->
+  <div class="trader-mgmt">
+    <div class="trader-mgmt-header">
+      <div class="section-title" style="margin-bottom:0">Trader Management</div>
+      <div style="font-size:0.78em;color:var(--muted)"><span id="traderCount">0</span> active / <span id="traderTotal">0</span> total</div>
+    </div>
+
+    <!-- Add Trader Form -->
+    <div class="add-form" id="addForm">
+      <input type="text" class="addr" id="newAddr" placeholder="0x... trader wallet address" spellcheck="false">
+      <input type="text" class="lbl" id="newLabel" placeholder="Label (optional)">
+      <select id="newBucket">
+        <option value="grinder">Grinder</option>
+        <option value="event">Event</option>
+      </select>
+      <button class="btn btn-accent btn-small" onclick="addTrader()">+ Add Trader</button>
+    </div>
+
+    <!-- Trader Table -->
+    <div style="overflow-x:auto">
+      <table class="trader-table">
+        <thead><tr>
+          <th>Active</th>
+          <th>Address</th>
+          <th>Label</th>
+          <th>Bucket</th>
+          <th>Multiplier</th>
+          <th>Max Trade</th>
+          <th>Added</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="traderTableBody"></tbody>
+      </table>
+    </div>
+    <div id="noTraders" class="loading" style="padding:20px">No traders configured yet. Add one above.</div>
+
+    <!-- Settings Row -->
+    <div class="settings-row">
+      <label>Poll Interval:</label>
+      <input type="number" class="inline-edit" id="pollIntervalInput" min="5" max="60" step="1" value="10">
+      <span style="font-size:0.82em;color:var(--muted)">seconds</span>
+      <button class="btn btn-accent btn-small" onclick="savePollInterval()">Save</button>
+    </div>
   </div>
 
   <!-- Risk Dashboard -->
@@ -159,19 +240,19 @@ tr:hover td{background:rgba(99,102,241,0.04)}
     <div class="section-title">Risk Status</div>
     <div class="risk-bars">
       <div class="risk-item">
-        <div class="risk-label"><span>Exposure</span><span id="exposureLabel">—</span></div>
+        <div class="risk-label"><span>Exposure</span><span id="exposureLabel"></span></div>
         <div class="risk-bar"><div class="risk-fill" id="exposureBar" style="width:0%;background:var(--blue)"></div></div>
       </div>
       <div class="risk-item">
-        <div class="risk-label"><span>Daily Loss</span><span id="dailyLossLabel">—</span></div>
+        <div class="risk-label"><span>Daily Loss</span><span id="dailyLossLabel"></span></div>
         <div class="risk-bar"><div class="risk-fill" id="dailyLossBar" style="width:0%;background:var(--green)"></div></div>
       </div>
       <div class="risk-item">
-        <div class="risk-label"><span>Positions</span><span id="positionsLabel">—</span></div>
+        <div class="risk-label"><span>Positions</span><span id="positionsLabel"></span></div>
         <div class="risk-bar"><div class="risk-fill" id="positionsBar" style="width:0%;background:var(--accent)"></div></div>
       </div>
       <div class="risk-item">
-        <div class="risk-label"><span>Equity vs Stop</span><span id="equityStopLabel">—</span></div>
+        <div class="risk-label"><span>Equity vs Stop</span><span id="equityStopLabel"></span></div>
         <div class="risk-bar"><div class="risk-fill" id="equityStopBar" style="width:100%;background:var(--green)"></div></div>
       </div>
     </div>
@@ -221,6 +302,15 @@ tr:hover td{background:rgba(99,102,241,0.04)}
 let authToken = localStorage.getItem('bot_token') || '';
 let allTrades = [];
 let currentFilter = 'all';
+let traderList = [];
+
+// ─── Toast ───
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type} show`;
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
 
 // ─── Auth ───
 async function doLogin() {
@@ -263,9 +353,7 @@ async function doLogin() {
       localStorage.removeItem('bot_token');
       authToken = '';
     }
-  } catch {
-    // Show login
-  }
+  } catch { /* Show login */ }
 })();
 
 function apiFetch(url, opts = {}) {
@@ -278,9 +366,10 @@ function apiFetch(url, opts = {}) {
 // ─── Data Fetching ───
 async function fetchData() {
   try {
-    const [statsRes, tradesRes] = await Promise.all([
+    const [statsRes, tradesRes, tradersRes] = await Promise.all([
       apiFetch('/api/stats'),
       apiFetch('/api/trades?limit=100'),
+      apiFetch('/api/traders'),
     ]);
     if (statsRes.status === 401) {
       localStorage.removeItem('bot_token');
@@ -291,8 +380,11 @@ async function fetchData() {
     }
     const data = await statsRes.json();
     allTrades = await tradesRes.json();
+    const tradersData = await tradersRes.json();
+    traderList = tradersData.traders || [];
     updateDashboard(data);
     renderTrades();
+    renderTraderTable();
     document.getElementById('headerSub').textContent = `Updated ${new Date().toLocaleTimeString()} | Cycle #${data.bot?.cycleCount || 0}`;
   } catch (err) {
     document.getElementById('headerSub').textContent = `Error: ${err.message}`;
@@ -304,10 +396,121 @@ async function controlBot(action) {
   try {
     const res = await apiFetch(`/api/control/${action}`, { method: 'POST', body: '{}' });
     const data = await res.json();
-    if (data.success) fetchData();
+    if (data.success) { showToast(`Bot ${action}d`, 'ok'); fetchData(); }
   } catch (err) {
-    alert(`Control failed: ${err.message}`);
+    showToast(`Control failed: ${err.message}`, 'err');
   }
+}
+
+// ─── Trader Management ───
+async function addTrader() {
+  const address = document.getElementById('newAddr').value.trim();
+  const label = document.getElementById('newLabel').value.trim();
+  const bucket = document.getElementById('newBucket').value;
+  if (!address) return showToast('Enter a wallet address', 'err');
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) return showToast('Invalid Ethereum address', 'err');
+  try {
+    const res = await apiFetch('/api/traders', {
+      method: 'POST',
+      body: JSON.stringify({ address, bucket, label }),
+    });
+    const data = await res.json();
+    if (data.error) return showToast(data.error, 'err');
+    document.getElementById('newAddr').value = '';
+    document.getElementById('newLabel').value = '';
+    showToast('Trader added', 'ok');
+    fetchData();
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+async function removeTrader(address) {
+  if (!confirm(`Remove trader ${address.slice(0,8)}...${address.slice(-4)}?`)) return;
+  try {
+    const res = await apiFetch(`/api/traders/${address}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.error) return showToast(data.error, 'err');
+    showToast('Trader removed', 'ok');
+    fetchData();
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+async function toggleTrader(address, enabled) {
+  try {
+    await apiFetch(`/api/traders/${address}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+    fetchData();
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+async function updateTraderField(address, field, value) {
+  try {
+    const body = {};
+    body[field] = value;
+    const res = await apiFetch(`/api/traders/${address}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) return showToast(data.error, 'err');
+    showToast('Updated', 'ok');
+    fetchData();
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+async function savePollInterval() {
+  const val = parseFloat(document.getElementById('pollIntervalInput').value) * 1000;
+  try {
+    const res = await apiFetch('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ pollInterval: val }),
+    });
+    const data = await res.json();
+    if (data.success) showToast(`Poll interval: ${val/1000}s`, 'ok');
+  } catch (err) { showToast(err.message, 'err'); }
+}
+
+function renderTraderTable() {
+  const tbody = document.getElementById('traderTableBody');
+  const noTraders = document.getElementById('noTraders');
+  const esc = s => s ? s.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : '';
+
+  document.getElementById('traderCount').textContent = traderList.filter(t => t.enabled).length;
+  document.getElementById('traderTotal').textContent = traderList.length;
+
+  if (traderList.length === 0) {
+    tbody.innerHTML = '';
+    noTraders.style.display = 'block';
+    return;
+  }
+  noTraders.style.display = 'none';
+
+  tbody.innerHTML = traderList.map(t => {
+    const shortAddr = `${t.address.slice(0,6)}...${t.address.slice(-4)}`;
+    const polyUrl = `https://polymarket.com/profile/${t.address}`;
+    const added = t.addedAt ? new Date(t.addedAt).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) : '--';
+    return `<tr style="${!t.enabled ? 'opacity:0.5' : ''}">
+      <td>
+        <label class="toggle-switch">
+          <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleTrader('${t.address}', this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+      <td class="addr-cell"><a href="${polyUrl}" target="_blank" style="color:var(--accent);text-decoration:none" title="${t.address}">${shortAddr}</a></td>
+      <td style="font-size:0.82em;color:var(--text)">${esc(t.label) || '<span style="color:var(--muted)">--</span>'}</td>
+      <td>
+        <select class="inline-edit" style="width:85px" onchange="updateTraderField('${t.address}','bucket',this.value)">
+          <option value="grinder" ${t.bucket==='grinder'?'selected':''}>Grinder</option>
+          <option value="event" ${t.bucket==='event'?'selected':''}>Event</option>
+        </select>
+      </td>
+      <td><input type="number" class="inline-edit" value="${t.multiplier}" min="0.01" max="2" step="0.05" onchange="updateTraderField('${t.address}','multiplier',this.value)"></td>
+      <td><input type="number" class="inline-edit" value="${t.maxTrade}" min="1" max="50" step="1" onchange="updateTraderField('${t.address}','maxTrade',this.value)"></td>
+      <td style="font-size:0.78em;color:var(--muted)">${added}</td>
+      <td><button class="btn btn-danger btn-small" onclick="removeTrader('${t.address}')">Remove</button></td>
+    </tr>`;
+  }).join('');
 }
 
 // ─── Dashboard Update ───
@@ -333,7 +536,7 @@ function updateDashboard(data) {
   const info = [];
   if (bot?.pauseReason) info.push(bot.pauseReason);
   if (bot?.consecutiveErrors > 0) info.push(`${bot.consecutiveErrors} errors`);
-  document.getElementById('controlsInfo').textContent = info.join(' | ') || (state === 'running' ? 'Bot is actively monitoring' : '—');
+  document.getElementById('controlsInfo').textContent = info.join(' | ') || (state === 'running' ? 'Bot is actively monitoring' : '');
 
   // KPIs
   const eq = equity || riskData?.equity || 0;
@@ -343,7 +546,7 @@ function updateDashboard(data) {
   const tpEl = document.getElementById('totalPnl');
   tpEl.textContent = `${tp >= 0 ? '+' : ''}$${tp.toFixed(2)}`;
   tpEl.className = `card-value ${tp >= 0 ? 'green' : 'red'}`;
-  document.getElementById('pnlSub').textContent = eq > 0 ? `${((tp / eq) * 100).toFixed(1)}% ROI` : '—';
+  document.getElementById('pnlSub').textContent = eq > 0 ? `${((tp / eq) * 100).toFixed(1)}% ROI` : '';
 
   const dp = riskData?.dailyPnl || 0;
   const dpEl = document.getElementById('dailyPnl');
@@ -383,7 +586,12 @@ function updateDashboard(data) {
     document.getElementById('equityStopLabel').textContent = `$${eq.toFixed(0)} / $${riskData.equityStopLoss} floor`;
   }
 
-  // Daily P&L chart
+  // Poll interval
+  if (data.pollInterval) {
+    document.getElementById('pollIntervalInput').value = (data.pollInterval / 1000).toFixed(0);
+  }
+
+  // Charts
   renderPnlChart(stats?.dailyPnl || []);
   renderBucketChart(stats?.byBucket || []);
   renderTraderGrid(stats?.byTrader || []);
@@ -435,9 +643,10 @@ function renderTraderGrid(traders) {
   grid.innerHTML = '';
   if (traders.length === 0) { grid.innerHTML = '<div style="color:var(--muted);font-size:0.85em;padding:20px">No trader data yet</div>'; return; }
   traders.forEach(t => {
+    const label = traderList.find(tr => tr.address === t.trader_address)?.label || '';
     const card = document.createElement('div');
     card.className = 'trader-card';
-    card.innerHTML = `<div class="trader-addr">${t.trader_address.slice(0, 6)}...${t.trader_address.slice(-4)}</div><div class="trader-stats"><div class="trader-stat"><span>Trades</span>${t.count}</div><div class="trader-stat"><span>P&L</span><span style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}; font-size:1.1em">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</span></div></div>`;
+    card.innerHTML = `<div class="trader-addr">${t.trader_address.slice(0, 6)}...${t.trader_address.slice(-4)}${label ? ` <span style="color:var(--muted);font-family:inherit;font-size:0.9em">${label}</span>` : ''}</div><div class="trader-stats"><div class="trader-stat"><span>Trades</span>${t.count}</div><div class="trader-stat"><span>P&L</span><span style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}; font-size:1.1em">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</span></div></div>`;
     grid.appendChild(card);
   });
 }
@@ -451,7 +660,6 @@ function renderTrades() {
   if (filtered.length === 0) { tbody.innerHTML = ''; noTrades.style.display = 'block'; return; }
   noTrades.style.display = 'none';
 
-  // Escape HTML to prevent XSS from market names
   const esc = s => s ? s.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : '';
 
   tbody.innerHTML = filtered.slice(0, 60).map(t => {
@@ -465,7 +673,7 @@ function renderTrades() {
       <td>${parseFloat(t.price).toFixed(2)}</td>
       <td>$${parseFloat(t.size_usd).toFixed(2)}</td>
       <td><span class="tag ${sc}">${t.status}</span></td>
-      <td style="font-size:0.78em;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.notes)}">${esc(t.notes || '—')}</td>
+      <td style="font-size:0.78em;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.notes)}">${esc(t.notes || '')}</td>
     </tr>`;
   }).join('');
 }

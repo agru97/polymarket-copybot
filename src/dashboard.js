@@ -1,7 +1,12 @@
 /**
- * Dashboard Server v2.0
+ * Dashboard Server v2.1
  *
- * Features:
+ * v2.1 changes:
+ *   - Trader management endpoints (add/remove/toggle/update)
+ *   - Poll interval control
+ *   - Hot-config integration
+ *
+ * Inherited from v2.0:
  *   - Password authentication (Bearer token)
  *   - Bot control endpoints (pause, resume, emergency stop)
  *   - Health check endpoint for monitoring
@@ -13,6 +18,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { config } = require('./config');
+const hotConfig = require('./hot-config');
 const db = require('./db');
 const risk = require('./risk');
 const log = require('./logger');
@@ -142,14 +148,24 @@ function start(getEquity, setEquity) {
 
   app.get('/api/config', (req, res) => {
     // Safe config — no secrets
+    const traders = hotConfig.getTraders();
     res.json({
       dryRun: config.bot.dryRun,
-      grinders: config.traders.grinders.length,
-      events: config.traders.events.length,
+      traders: traders.map(t => ({
+        address: t.address,
+        bucket: t.bucket,
+        multiplier: t.multiplier,
+        maxTrade: t.maxTrade,
+        enabled: t.enabled,
+        label: t.label,
+        addedAt: t.addedAt,
+      })),
+      activeTraders: hotConfig.getActiveTraders().length,
+      totalTraders: traders.length,
       sizing: config.sizing,
       caps: config.caps,
       risk: config.risk,
-      pollInterval: config.bot.pollInterval,
+      pollInterval: hotConfig.getPollInterval(),
     });
   });
 
@@ -162,7 +178,7 @@ function start(getEquity, setEquity) {
   });
 
   // ─────────────────────────────────
-  //  CONTROL ENDPOINTS
+  //  BOT CONTROL ENDPOINTS
   // ─────────────────────────────────
   app.post('/api/control/pause', (req, res) => {
     const reason = req.body.reason || 'Paused from dashboard';
@@ -182,6 +198,86 @@ function start(getEquity, setEquity) {
     botState.emergencyStop(reason);
     log.error(`EMERGENCY STOP from dashboard: ${reason}`);
     res.json({ success: true, state: botState.state });
+  });
+
+  // ─────────────────────────────────
+  //  TRADER MANAGEMENT (v2.1)
+  // ─────────────────────────────────
+
+  // List all traders
+  app.get('/api/traders', (req, res) => {
+    try {
+      const traders = hotConfig.getTraders();
+      res.json({ traders, total: traders.length, active: traders.filter(t => t.enabled).length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Add a trader
+  app.post('/api/traders', (req, res) => {
+    try {
+      const { address, bucket, label } = req.body;
+      if (!address) return res.status(400).json({ error: 'Address is required' });
+      if (!bucket) return res.status(400).json({ error: 'Bucket is required (grinder or event)' });
+
+      const result = hotConfig.addTrader(address, bucket, label);
+      if (result.error) return res.status(400).json(result);
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update a trader
+  app.patch('/api/traders/:address', (req, res) => {
+    try {
+      const { address } = req.params;
+      const updates = req.body;
+
+      if (!updates || Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: 'No updates provided' });
+      }
+
+      const result = hotConfig.updateTrader(address, updates);
+      if (result.error) return res.status(404).json(result);
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove a trader
+  app.delete('/api/traders/:address', (req, res) => {
+    try {
+      const { address } = req.params;
+      const result = hotConfig.removeTrader(address);
+      if (result.error) return res.status(404).json(result);
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────
+  //  SETTINGS (v2.1)
+  // ─────────────────────────────────
+  app.patch('/api/settings', (req, res) => {
+    try {
+      const { pollInterval } = req.body;
+      const updated = {};
+
+      if (pollInterval !== undefined) {
+        updated.pollInterval = hotConfig.setPollInterval(pollInterval);
+      }
+
+      res.json({ success: true, ...updated });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ─────────────────────────────────
