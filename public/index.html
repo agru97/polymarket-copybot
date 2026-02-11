@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Copy Bot — Control Panel</title>
+<style>
+:root{--bg:#0a0e1a;--surface:#111827;--surface2:#1f2937;--border:#374151;--text:#e5e7eb;--muted:#9ca3af;--accent:#6366f1;--green:#10b981;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;--purple:#a855f7}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+.app{max-width:1320px;margin:0 auto;padding:16px}
+
+/* Login overlay */
+.login-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px;width:380px;text-align:center}
+.login-box h2{font-size:1.3em;margin-bottom:8px;background:linear-gradient(135deg,#818cf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login-box p{color:var(--muted);font-size:0.85em;margin-bottom:24px}
+.login-box input{width:100%;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.95em;margin-bottom:12px;outline:none}
+.login-box input:focus{border-color:var(--accent)}
+.login-box button{width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:0.95em;font-weight:600;cursor:pointer;transition:opacity 0.15s}
+.login-box button:hover{opacity:0.9}
+.login-error{color:var(--red);font-size:0.82em;margin-top:8px}
+
+/* Header */
+.header{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.header-left h1{font-size:1.3em;font-weight:700;background:linear-gradient(135deg,#818cf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header-left .sub{color:var(--muted);font-size:0.78em;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:12px}
+.state-badge{padding:5px 14px;border-radius:20px;font-size:0.75em;font-weight:600;letter-spacing:0.5px;text-transform:uppercase}
+.state-running{background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
+.state-paused{background:rgba(245,158,11,0.15);color:var(--yellow);border:1px solid rgba(245,158,11,0.3)}
+.state-emergency_stop{background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3)}
+.state-starting,.state-stopped{background:rgba(107,114,128,0.15);color:var(--muted);border:1px solid rgba(107,114,128,0.3)}
+.mode-badge{padding:5px 14px;border-radius:20px;font-size:0.75em;font-weight:600;letter-spacing:0.5px}
+.mode-dry{background:rgba(245,158,11,0.15);color:var(--yellow);border:1px solid rgba(245,158,11,0.3)}
+.mode-live{background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
+
+/* Control bar */
+.controls{display:flex;gap:8px;padding:14px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:20px;align-items:center;flex-wrap:wrap}
+.controls .label{font-size:0.78em;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-right:8px;font-weight:600}
+.btn{padding:8px 18px;border:none;border-radius:8px;font-size:0.82em;font-weight:600;cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{filter:brightness(1.1)}
+.btn-pause{background:rgba(245,158,11,0.2);color:var(--yellow);border:1px solid rgba(245,158,11,0.3)}
+.btn-resume{background:rgba(16,185,129,0.2);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
+.btn-stop{background:rgba(239,68,68,0.2);color:var(--red);border:1px solid rgba(239,68,68,0.3)}
+.btn-stop:hover{background:rgba(239,68,68,0.35)}
+.controls-info{margin-left:auto;font-size:0.78em;color:var(--muted)}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px}
+.card-label{font-size:0.7em;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px}
+.card-value{font-size:1.5em;font-weight:700}
+.card-sub{font-size:0.78em;color:var(--muted);margin-top:2px}
+.green{color:var(--green)}.red{color:var(--red)}.yellow{color:var(--yellow)}.blue{color:var(--blue)}.accent{color:var(--accent)}.purple{color:var(--purple)}
+
+/* Risk section */
+.risk-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.section-title{font-size:0.82em;margin-bottom:14px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.risk-bars{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.risk-item{display:flex;flex-direction:column;gap:6px}
+.risk-label{display:flex;justify-content:space-between;font-size:0.82em}
+.risk-bar{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden}
+.risk-fill{height:100%;border-radius:4px;transition:width 0.6s ease}
+
+/* Charts */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.chart-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.chart-box h3{font-size:0.82em;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;font-weight:600}
+.mini-chart{display:flex;align-items:flex-end;gap:3px;height:80px}
+.mini-bar{flex:1;border-radius:3px 3px 0 0;min-width:8px;transition:height 0.4s;cursor:default}
+
+/* Tables */
+.table-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.tabs{display:flex;gap:4px;margin-bottom:14px}
+.tab{padding:6px 14px;border-radius:8px;font-size:0.82em;cursor:pointer;background:var(--surface2);color:var(--muted);border:none;transition:all 0.15s}
+.tab.active{background:var(--accent);color:#fff}
+table{width:100%;border-collapse:collapse;font-size:0.83em}
+th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:500;font-size:0.76em;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid rgba(55,65,81,0.4)}
+tr:hover td{background:rgba(99,102,241,0.04)}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.76em;font-weight:600}
+.tag-grinder{background:rgba(59,130,246,0.15);color:var(--blue)}
+.tag-event{background:rgba(168,85,247,0.15);color:var(--purple)}
+.tag-simulated{background:rgba(245,158,11,0.15);color:var(--yellow)}
+.tag-executed{background:rgba(16,185,129,0.15);color:var(--green)}
+.tag-blocked,.tag-risk_blocked{background:rgba(239,68,68,0.15);color:var(--red)}
+.tag-filtered,.tag-skipped{background:rgba(107,114,128,0.15);color:var(--muted)}
+.tag-rejected{background:rgba(245,158,11,0.15);color:var(--yellow)}
+.tag-failed{background:rgba(239,68,68,0.15);color:var(--red)}
+.tag-slippage_blocked{background:rgba(245,158,11,0.15);color:var(--yellow)}
+
+/* Trader cards */
+.trader-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.trader-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px}
+.trader-addr{font-family:'JetBrains Mono',monospace;font-size:0.82em;color:var(--accent)}
+.trader-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.trader-stat{font-size:0.82em}
+.trader-stat span{display:block;font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+
+/* Responsive */
+@media(max-width:768px){.cards{grid-template-columns:1fr 1fr}.chart-grid,.risk-bars{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}.controls-info{margin-left:0;margin-top:8px}}
+@media(max-width:480px){.cards{grid-template-columns:1fr}}
+
+.loading{text-align:center;padding:40px;color:var(--muted);font-size:0.9em}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Polymarket Copy Bot</h2>
+    <p>Enter your dashboard password to continue</p>
+    <input type="password" id="loginPassword" placeholder="Password" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Sign In</button>
+    <div class="login-error hidden" id="loginError"></div>
+  </div>
+</div>
+
+<!-- Main Dashboard -->
+<div class="app hidden" id="mainApp">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Polymarket Copy Bot</h1>
+      <div class="sub" id="headerSub">Connecting...</div>
+    </div>
+    <div class="header-right">
+      <div id="modeBadge" class="mode-badge mode-dry">DRY RUN</div>
+      <div id="stateBadge" class="state-badge state-starting">STARTING</div>
+    </div>
+  </div>
+
+  <!-- Control Bar -->
+  <div class="controls">
+    <span class="label">Controls</span>
+    <button class="btn btn-pause" onclick="controlBot('pause')" id="btnPause">Pause</button>
+    <button class="btn btn-resume" onclick="controlBot('resume')" id="btnResume">Resume</button>
+    <button class="btn btn-stop" onclick="if(confirm('Emergency stop the bot? This will halt ALL trading until you restart.'))controlBot('emergency-stop')">Emergency Stop</button>
+    <div class="controls-info" id="controlsInfo">—</div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="cards">
+    <div class="card"><div class="card-label">Equity</div><div class="card-value blue" id="equity">$—</div><div class="card-sub" id="equitySub">—</div></div>
+    <div class="card"><div class="card-label">Total P&L</div><div class="card-value" id="totalPnl">$—</div><div class="card-sub" id="pnlSub">—</div></div>
+    <div class="card"><div class="card-label">Today's P&L</div><div class="card-value" id="dailyPnl">$—</div><div class="card-sub" id="dailySub">—</div></div>
+    <div class="card"><div class="card-label">Win Rate</div><div class="card-value accent" id="winRate">—%</div><div class="card-sub" id="winSub">—</div></div>
+    <div class="card"><div class="card-label">Positions</div><div class="card-value" id="openPos">—</div><div class="card-sub" id="posSub">—</div></div>
+    <div class="card"><div class="card-label">Trades</div><div class="card-value accent" id="totalTrades">—</div><div class="card-sub" id="tradesSub">—</div></div>
+    <div class="card"><div class="card-label">Uptime</div><div class="card-value blue" id="uptime">—</div><div class="card-sub" id="uptimeSub">—</div></div>
+  </div>
+
+  <!-- Risk Dashboard -->
+  <div class="risk-section">
+    <div class="section-title">Risk Status</div>
+    <div class="risk-bars">
+      <div class="risk-item">
+        <div class="risk-label"><span>Exposure</span><span id="exposureLabel">—</span></div>
+        <div class="risk-bar"><div class="risk-fill" id="exposureBar" style="width:0%;background:var(--blue)"></div></div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-label"><span>Daily Loss</span><span id="dailyLossLabel">—</span></div>
+        <div class="risk-bar"><div class="risk-fill" id="dailyLossBar" style="width:0%;background:var(--green)"></div></div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-label"><span>Positions</span><span id="positionsLabel">—</span></div>
+        <div class="risk-bar"><div class="risk-fill" id="positionsBar" style="width:0%;background:var(--accent)"></div></div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-label"><span>Equity vs Stop</span><span id="equityStopLabel">—</span></div>
+        <div class="risk-bar"><div class="risk-fill" id="equityStopBar" style="width:100%;background:var(--green)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-grid">
+    <div class="chart-box">
+      <h3>Daily P&L (Last 14 Days)</h3>
+      <div class="mini-chart" id="pnlChart"></div>
+    </div>
+    <div class="chart-box">
+      <h3>P&L by Bucket</h3>
+      <div id="bucketChart" style="display:flex;gap:20px;align-items:center;height:80px"></div>
+    </div>
+  </div>
+
+  <!-- Trader Performance -->
+  <div class="table-section">
+    <div class="section-title">Trader Performance</div>
+    <div class="trader-grid" id="traderGrid"></div>
+  </div>
+
+  <!-- Trade Log -->
+  <div class="table-section">
+    <div class="section-title">Trade Log</div>
+    <div class="tabs">
+      <button class="tab active" data-filter="all">All</button>
+      <button class="tab" data-filter="executed">Executed</button>
+      <button class="tab" data-filter="simulated">Simulated</button>
+      <button class="tab" data-filter="risk_blocked">Blocked</button>
+      <button class="tab" data-filter="failed">Failed</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Time</th><th>Trader</th><th>Bucket</th><th>Market</th><th>Side</th><th>Price</th><th>Size</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody id="tradeTable"></tbody>
+      </table>
+    </div>
+    <div id="noTrades" class="loading">Waiting for trades...</div>
+  </div>
+
+</div>
+
+<script>
+// ─── State ───
+let authToken = localStorage.getItem('bot_token') || '';
+let allTrades = [];
+let currentFilter = 'all';
+
+// ─── Auth ───
+async function doLogin() {
+  const pw = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    const data = await res.json();
+    if (data.token) {
+      authToken = data.token;
+      localStorage.setItem('bot_token', authToken);
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('mainApp').classList.remove('hidden');
+      fetchData();
+    } else {
+      errEl.textContent = data.error || 'Invalid password';
+      errEl.classList.remove('hidden');
+    }
+  } catch (e) {
+    errEl.textContent = 'Connection failed';
+    errEl.classList.remove('hidden');
+  }
+}
+
+// Auto-login if token exists
+(async function tryAutoLogin() {
+  if (!authToken) return;
+  try {
+    const res = await apiFetch('/api/stats');
+    if (res.ok) {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('mainApp').classList.remove('hidden');
+      fetchData();
+    } else {
+      localStorage.removeItem('bot_token');
+      authToken = '';
+    }
+  } catch {
+    // Show login
+  }
+})();
+
+function apiFetch(url, opts = {}) {
+  return fetch(url, {
+    ...opts,
+    headers: { ...opts.headers, 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+  });
+}
+
+// ─── Data Fetching ───
+async function fetchData() {
+  try {
+    const [statsRes, tradesRes] = await Promise.all([
+      apiFetch('/api/stats'),
+      apiFetch('/api/trades?limit=100'),
+    ]);
+    if (statsRes.status === 401) {
+      localStorage.removeItem('bot_token');
+      authToken = '';
+      document.getElementById('loginOverlay').classList.remove('hidden');
+      document.getElementById('mainApp').classList.add('hidden');
+      return;
+    }
+    const data = await statsRes.json();
+    allTrades = await tradesRes.json();
+    updateDashboard(data);
+    renderTrades();
+    document.getElementById('headerSub').textContent = `Updated ${new Date().toLocaleTimeString()} | Cycle #${data.bot?.cycleCount || 0}`;
+  } catch (err) {
+    document.getElementById('headerSub').textContent = `Error: ${err.message}`;
+  }
+}
+
+// ─── Bot Controls ───
+async function controlBot(action) {
+  try {
+    const res = await apiFetch(`/api/control/${action}`, { method: 'POST', body: '{}' });
+    const data = await res.json();
+    if (data.success) fetchData();
+  } catch (err) {
+    alert(`Control failed: ${err.message}`);
+  }
+}
+
+// ─── Dashboard Update ───
+function updateDashboard(data) {
+  const { stats, risk: riskData, dryRun, bot, equity } = data;
+
+  // Mode badge
+  const modeBadge = document.getElementById('modeBadge');
+  modeBadge.textContent = dryRun ? 'DRY RUN' : 'LIVE';
+  modeBadge.className = `mode-badge ${dryRun ? 'mode-dry' : 'mode-live'}`;
+
+  // State badge
+  const state = bot?.state || 'starting';
+  const stateBadge = document.getElementById('stateBadge');
+  stateBadge.textContent = state.replace('_', ' ').toUpperCase();
+  stateBadge.className = `state-badge state-${state}`;
+
+  // Control buttons visibility
+  document.getElementById('btnPause').style.display = state === 'running' ? '' : 'none';
+  document.getElementById('btnResume').style.display = (state === 'paused' || state === 'emergency_stop') ? '' : 'none';
+
+  // Controls info
+  const info = [];
+  if (bot?.pauseReason) info.push(bot.pauseReason);
+  if (bot?.consecutiveErrors > 0) info.push(`${bot.consecutiveErrors} errors`);
+  document.getElementById('controlsInfo').textContent = info.join(' | ') || (state === 'running' ? 'Bot is actively monitoring' : '—');
+
+  // KPIs
+  const eq = equity || riskData?.equity || 0;
+  document.getElementById('equity').textContent = `$${eq.toFixed(2)}`;
+
+  const tp = stats?.totalPnl || 0;
+  const tpEl = document.getElementById('totalPnl');
+  tpEl.textContent = `${tp >= 0 ? '+' : ''}$${tp.toFixed(2)}`;
+  tpEl.className = `card-value ${tp >= 0 ? 'green' : 'red'}`;
+  document.getElementById('pnlSub').textContent = eq > 0 ? `${((tp / eq) * 100).toFixed(1)}% ROI` : '—';
+
+  const dp = riskData?.dailyPnl || 0;
+  const dpEl = document.getElementById('dailyPnl');
+  dpEl.textContent = `${dp >= 0 ? '+' : ''}$${dp.toFixed(2)}`;
+  dpEl.className = `card-value ${dp >= 0 ? 'green' : 'red'}`;
+
+  const wr = (stats?.wins + stats?.losses) > 0 ? ((stats.wins / (stats.wins + stats.losses)) * 100) : 0;
+  document.getElementById('winRate').textContent = `${wr.toFixed(0)}%`;
+  document.getElementById('winSub').textContent = `${stats?.wins || 0}W / ${stats?.losses || 0}L`;
+
+  document.getElementById('openPos').textContent = riskData?.openPositions || 0;
+  document.getElementById('posSub').textContent = `of ${riskData?.maxPositions || 8} max`;
+  document.getElementById('totalTrades').textContent = stats?.total || 0;
+
+  // Uptime
+  const ut = bot?.uptime || 0;
+  const hours = Math.floor(ut / 3600000);
+  const mins = Math.floor((ut % 3600000) / 60000);
+  document.getElementById('uptime').textContent = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  document.getElementById('uptimeSub').textContent = `${bot?.cycleCount || 0} cycles`;
+
+  // Risk bars
+  if (riskData) {
+    updateRiskBar('exposure', riskData.totalExposure, riskData.maxExposure, 'blue');
+    const lossPct = Math.abs(riskData.dailyPnl) / riskData.dailyLossLimit * 100;
+    setBar('dailyLossBar', lossPct, lossPct > 80 ? '--red' : lossPct > 50 ? '--yellow' : '--green');
+    document.getElementById('dailyLossLabel').textContent = `$${Math.abs(riskData.dailyPnl).toFixed(2)} / $${riskData.dailyLossLimit}`;
+
+    const posPct = (riskData.openPositions / riskData.maxPositions) * 100;
+    setBar('positionsBar', posPct, '--accent');
+    document.getElementById('positionsLabel').textContent = `${riskData.openPositions} / ${riskData.maxPositions}`;
+
+    const eqRange = eq - riskData.equityStopLoss;
+    const eqMax = 110 - riskData.equityStopLoss;
+    const eqPct = Math.max(0, (eqRange / eqMax) * 100);
+    setBar('equityStopBar', eqPct, eqPct < 30 ? '--red' : eqPct < 50 ? '--yellow' : '--green');
+    document.getElementById('equityStopLabel').textContent = `$${eq.toFixed(0)} / $${riskData.equityStopLoss} floor`;
+  }
+
+  // Daily P&L chart
+  renderPnlChart(stats?.dailyPnl || []);
+  renderBucketChart(stats?.byBucket || []);
+  renderTraderGrid(stats?.byTrader || []);
+}
+
+function updateRiskBar(name, value, max, color) {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  const barColor = pct > 80 ? '--red' : pct > 60 ? '--yellow' : `--${color}`;
+  setBar(`${name}Bar`, pct, barColor);
+  document.getElementById(`${name}Label`).textContent = `$${value.toFixed(0)} / $${max}`;
+}
+
+function setBar(id, pct, color) {
+  const el = document.getElementById(id);
+  el.style.width = `${Math.min(pct, 100)}%`;
+  el.style.background = `var(${color})`;
+}
+
+function renderPnlChart(data) {
+  const chart = document.getElementById('pnlChart');
+  chart.innerHTML = '';
+  const days = (data || []).slice(0, 14).reverse();
+  if (days.length === 0) { chart.innerHTML = '<div style="color:var(--muted);font-size:0.85em;align-self:center;width:100%;text-align:center">No data yet</div>'; return; }
+  const maxAbs = Math.max(...days.map(d => Math.abs(d.pnl)), 1);
+  days.forEach(d => {
+    const bar = document.createElement('div');
+    bar.className = 'mini-bar';
+    bar.style.height = `${Math.max(5, (Math.abs(d.pnl) / maxAbs) * 80)}px`;
+    bar.style.background = d.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    bar.title = `${d.day}: ${d.pnl >= 0 ? '+' : ''}$${d.pnl.toFixed(2)} (${d.trades} trades)`;
+    chart.appendChild(bar);
+  });
+}
+
+function renderBucketChart(buckets) {
+  const el = document.getElementById('bucketChart');
+  el.innerHTML = '';
+  if (buckets.length === 0) { el.innerHTML = '<div style="color:var(--muted);font-size:0.85em;width:100%;text-align:center">No data yet</div>'; return; }
+  buckets.forEach(b => {
+    const d = document.createElement('div');
+    d.style.flex = '1';
+    d.innerHTML = `<div style="font-size:0.82em;font-weight:600;margin-bottom:4px;text-transform:capitalize">${b.bucket}</div><div style="font-size:1.3em;font-weight:700;color:${b.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${b.pnl >= 0 ? '+' : ''}$${b.pnl.toFixed(2)}</div><div style="font-size:0.75em;color:var(--muted)">${b.count} trades</div>`;
+    el.appendChild(d);
+  });
+}
+
+function renderTraderGrid(traders) {
+  const grid = document.getElementById('traderGrid');
+  grid.innerHTML = '';
+  if (traders.length === 0) { grid.innerHTML = '<div style="color:var(--muted);font-size:0.85em;padding:20px">No trader data yet</div>'; return; }
+  traders.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'trader-card';
+    card.innerHTML = `<div class="trader-addr">${t.trader_address.slice(0, 6)}...${t.trader_address.slice(-4)}</div><div class="trader-stats"><div class="trader-stat"><span>Trades</span>${t.count}</div><div class="trader-stat"><span>P&L</span><span style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}; font-size:1.1em">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</span></div></div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ─── Trade Log ───
+function renderTrades() {
+  const tbody = document.getElementById('tradeTable');
+  const noTrades = document.getElementById('noTrades');
+  const filtered = currentFilter === 'all' ? allTrades : allTrades.filter(t => t.status === currentFilter);
+
+  if (filtered.length === 0) { tbody.innerHTML = ''; noTrades.style.display = 'block'; return; }
+  noTrades.style.display = 'none';
+
+  // Escape HTML to prevent XSS from market names
+  const esc = s => s ? s.replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])) : '';
+
+  tbody.innerHTML = filtered.slice(0, 60).map(t => {
+    const sc = `tag-${t.status}`;
+    return `<tr>
+      <td style="white-space:nowrap;font-size:0.8em">${new Date(t.timestamp).toLocaleString('en-GB',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+      <td style="font-family:monospace;font-size:0.8em">${t.trader_address.slice(0,6)}...${t.trader_address.slice(-4)}</td>
+      <td><span class="tag tag-${t.bucket}">${t.bucket}</span></td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.market_name)}">${esc(t.market_name || t.market_id.slice(0,12)+'...')}</td>
+      <td style="font-weight:600">${t.side}</td>
+      <td>${parseFloat(t.price).toFixed(2)}</td>
+      <td>$${parseFloat(t.size_usd).toFixed(2)}</td>
+      <td><span class="tag ${sc}">${t.status}</span></td>
+      <td style="font-size:0.78em;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.notes)}">${esc(t.notes || '—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Tab clicks
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    currentFilter = this.dataset.filter;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+    renderTrades();
+  });
+});
+
+// Auto-refresh every 10 seconds
+setInterval(() => { if (authToken) fetchData(); }, 10000);
+</script>
+</body>
+</html>

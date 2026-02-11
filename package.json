@@ -1,0 +1,19 @@
+{
+  "name": "polymarket-copybot",
+  "version": "1.0.0",
+  "description": "Self-hosted Polymarket copy trading bot with web dashboard",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "setup": "node src/setup-keys.js",
+    "dashboard": "node src/dashboard.js",
+    "dev": "node src/index.js | tee logs/bot.log"
+  },
+  "dependencies": {
+    "@polymarket/clob-client": "^4.0.0",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.0",
+    "ethers": "^5.8.0",
+    "express": "^4.21.0"
+  }
+}
