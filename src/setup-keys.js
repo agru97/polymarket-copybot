@@ -141,11 +141,13 @@ async function main() {
         console.log(`  ✅ ${name}: already approved`);
       } else {
         console.log(`  → Approving USDC for ${name}...`);
-        // Fetch current gas price from network (Polygon requires 25+ gwei now)
+        // Polygon requires 25+ gwei — public RPCs return stale low estimates
+        const MIN_TIP = ethers.utils.parseUnits('30', 'gwei');   // 30 gwei floor
+        const MIN_FEE = ethers.utils.parseUnits('50', 'gwei');   // 50 gwei max fee
         const feeData = await provider.getFeeData();
         const gasOverrides = {
-          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(2),  // 2x for reliability
-          maxFeePerGas: feeData.maxFeePerGas.mul(2),
+          maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.gt(MIN_TIP) ? feeData.maxPriorityFeePerGas : MIN_TIP,
+          maxFeePerGas: feeData.maxFeePerGas.gt(MIN_FEE) ? feeData.maxFeePerGas : MIN_FEE,
         };
         const tx = await usdc.approve(address, ethers.constants.MaxUint256, gasOverrides);
         console.log(`    Tx: ${tx.hash}`);
