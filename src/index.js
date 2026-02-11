@@ -153,16 +153,34 @@ function getReadyAggregations() {
 function getEquity() { return currentEquity; }
 function setEquity(val) { currentEquity = val; }
 
-async function updateEquityFromChain() {
-  try {
-    const balance = await trader.getUSDCBalance();
-    if (balance !== null && balance >= 0) {
-      currentEquity = balance;
-      log.debug(`Equity updated from chain: $${balance.toFixed(2)}`);
+let equityInitialized = false; // tracks whether we've ever gotten a real balance
+
+async function updateEquityFromChain(retries = 1) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const balance = await trader.getUSDCBalance();
+      if (balance !== null && balance >= 0) {
+        const changed = Math.abs(currentEquity - balance) > 0.01;
+        currentEquity = balance;
+        if (!equityInitialized) {
+          equityInitialized = true;
+          log.info(`Equity from chain: $${balance.toFixed(2)}`);
+          // Re-run auto-sizing now that we have real balance
+          autoSizeRiskFromBalance(balance);
+          STARTING_EQUITY = balance;
+        } else if (changed) {
+          log.debug(`Equity updated: $${balance.toFixed(2)}`);
+        }
+        return true; // success
+      }
+      log.warn(`Chain equity fetch returned null (attempt ${attempt + 1}/${retries})`);
+    } catch (err) {
+      log.warn(`Could not fetch on-chain equity (attempt ${attempt + 1}/${retries}): ${err.message}`);
     }
-  } catch (err) {
-    log.warn(`Could not fetch on-chain equity: ${err.message}`);
+    // Wait before retry
+    if (attempt < retries - 1) await new Promise(r => setTimeout(r, 3000));
   }
+  return false; // all retries failed
 }
 
 async function runCycle() {
@@ -237,10 +255,11 @@ async function runCycle() {
       backoffMs = MIN_BACKOFF;
     }
 
-    // Periodic equity update from chain (every 30 cycles ≈ 5 min)
-    // Always update — equity display should be accurate even in dry-run
-    if (botState._cycleCount % 30 === 0) {
-      await updateEquityFromChain();
+    // Periodic equity update from chain
+    // If we never got a real balance, try every cycle; otherwise every 30 cycles (~5 min)
+    const equityInterval = equityInitialized ? 30 : 1;
+    if (botState._cycleCount % equityInterval === 0) {
+      await updateEquityFromChain(equityInitialized ? 1 : 3);
     }
 
     // Periodic snapshot (every 10 cycles)
@@ -291,15 +310,15 @@ async function main() {
   // Initialize CLOB client
   await trader.initClobClient();
 
-  // Fetch real equity from chain on startup (don't rely on MAX_TOTAL_EXPOSURE guess)
-  await updateEquityFromChain();
-  STARTING_EQUITY = currentEquity; // P&L calculated from real starting balance
-  log.info(`Starting equity: $${currentEquity.toFixed(2)} (on-chain USDC.e balance)`);
-
-  // ─── Auto-size risk limits from real balance ───────────────────
-  // Only auto-adjusts values the user hasn't explicitly set in .env.
-  // Percentages tuned for small-to-medium accounts ($10–$500).
-  autoSizeRiskFromBalance(currentEquity);
+  // Fetch real equity from chain on startup — retry up to 5 times (RPC can be flaky)
+  const gotBalance = await updateEquityFromChain(5);
+  if (!gotBalance) {
+    log.warn(`Could not fetch on-chain balance after 5 retries — using fallback $${currentEquity.toFixed(2)}`);
+    log.warn('Risk limits are based on the fallback. They will auto-correct once chain becomes reachable.');
+    // Still run auto-sizing from the fallback so limits aren't wildly off
+    autoSizeRiskFromBalance(currentEquity);
+  }
+  // If gotBalance is true, updateEquityFromChain already called autoSizeRiskFromBalance
 
   // Start dashboard (with auth + controls + trader management)
   dashboard.start(getEquity, setEquity);

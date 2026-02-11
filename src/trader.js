@@ -152,18 +152,35 @@ async function initClobClient() {
 }
 
 /**
- * Get USDC balance from Polygon chain
+ * Get USDC balance from Polygon chain (tries primary RPC then fallbacks)
  */
 async function getUSDCBalance() {
   if (!provider || !walletSigner) return null;
+
+  // Try primary provider first
   try {
     const usdc = new ethers.Contract(C.USDC_ADDRESS, C.ERC20_ABI, provider);
     const balance = await usdc.balanceOf(walletSigner.address);
     return parseFloat(ethers.utils.formatUnits(balance, C.USDC_DECIMALS));
-  } catch (err) {
-    log.warn(`Could not fetch USDC balance: ${err.message}`);
-    return null;
+  } catch (primaryErr) {
+    log.warn(`Primary RPC balance fetch failed: ${primaryErr.message}`);
   }
+
+  // Try fallback RPCs
+  for (const rpc of (C.POLYGON_RPC_FALLBACKS || [])) {
+    try {
+      const fallbackProvider = new ethers.providers.JsonRpcProvider(rpc);
+      const usdc = new ethers.Contract(C.USDC_ADDRESS, C.ERC20_ABI, fallbackProvider);
+      const balance = await usdc.balanceOf(walletSigner.address);
+      log.info(`Balance fetched via fallback RPC: ${rpc}`);
+      return parseFloat(ethers.utils.formatUnits(balance, C.USDC_DECIMALS));
+    } catch (err) {
+      log.debug(`Fallback RPC ${rpc} failed: ${err.message}`);
+    }
+  }
+
+  log.warn('All RPCs failed to fetch USDC balance');
+  return null;
 }
 
 /**
