@@ -264,6 +264,19 @@ async function runCycle() {
       await updateEquityFromChain(equityInitialized ? 1 : 3);
     }
 
+    // Periodic unrealized PnL refresh (every 10 cycles — keeps dashboard accurate)
+    if (botState._cycleCount % 10 === 0) {
+      const openPositions = db.getOpenPositions();
+      for (const pos of openPositions) {
+        try {
+          const price = await trader.getMarketPrice(pos.token_id, 'SELL');
+          if (price && price > 0) {
+            db.updateUnrealizedPnl(pos.market_id, pos.token_id, price);
+          }
+        } catch { /* non-critical — stale PnL is better than crashing */ }
+      }
+    }
+
     // Periodic snapshot (every 10 cycles)
     if (botState._cycleCount % 10 === 0) {
       const riskStatus = risk.getRiskStatus(currentEquity);

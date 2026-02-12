@@ -26,10 +26,11 @@ const CLOB_HOST = 'https://clob.polymarket.com';
 const CHAIN_ID = 137;
 const POLYGON_RPC = process.env.POLYGON_RPC || 'https://polygon-bor-rpc.publicnode.com';
 
-// Polymarket contract addresses on Polygon
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDCe on Polygon
-const CTF_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
-const NEG_RISK_CTF_EXCHANGE = '0xC5d563A36AE78145C45a50134d48A1215220f80a';
+// Polymarket contract addresses on Polygon — use constants as single source of truth
+const C = require('./constants');
+const USDC_ADDRESS = C.USDC_ADDRESS;
+const CTF_EXCHANGE = C.CTF_EXCHANGE;
+const NEG_RISK_CTF_EXCHANGE = C.NEG_RISK_CTF_EXCHANGE;
 
 const ERC20_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)',

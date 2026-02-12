@@ -36,23 +36,17 @@ let provider = null;
 let walletSigner = null;
 
 /**
- * Calculate PnL for a closed position
- * Side-aware: handles both BUY (YES) and SELL (NO) positions correctly
+ * Calculate PnL for a closed position.
+ * All our positions are token buys, so PnL = (shares × exitPrice) - cost.
  */
-function calculatePnl(entryPrice, exitPrice, sizeUsd, side) {
+function calculatePnl(entryPrice, exitPrice, sizeUsd) {
   if (!entryPrice || entryPrice <= 0 || !exitPrice) return 0;
   const shares = sizeUsd / entryPrice;
 
-  // BUY/YES positions: profit when price goes up
-  // SELL/NO positions: profit when price goes down
-  const isBuy = !side || side === 'BUY' || side === 'YES' || side.startsWith('CLOSE_YES') || side.startsWith('CLOSE_BUY');
-  let pnl;
-  if (isBuy) {
-    pnl = (shares * exitPrice) - sizeUsd;
-  } else {
-    // For NO/SELL: you sold at entryPrice, buy-back at exitPrice
-    pnl = sizeUsd - (shares * exitPrice);
-  }
+  // All positions are token buys (we buy the token the leader holds).
+  // Profit when the token price goes up, loss when it drops.
+  // This is correct for all outcome types: Yes, No, team names, etc.
+  const pnl = (shares * exitPrice) - sizeUsd;
   return Math.round(pnl * 100) / 100;
 }
 
@@ -74,7 +68,7 @@ async function placeOrderWithRetry(params, orderType) {
   let lastError;
   for (let attempt = 0; attempt <= MAX_ORDER_RETRIES; attempt++) {
     try {
-      const order = await clobClient.createAndPostMarketOrder(params, orderType);
+      const order = await clobClient.createAndPostMarketOrder(params, undefined, orderType);
       return order;
     } catch (err) {
       lastError = err;
@@ -187,15 +181,21 @@ async function getUSDCBalance() {
 }
 
 /**
- * Check USDC allowance for CTF Exchange (Novus-Tech pattern)
- * Ensures the exchange can spend our USDC before we try to trade
+ * Check USDC allowance for both Polymarket exchange contracts.
+ * Returns the minimum allowance across CTF Exchange and Neg Risk CTF Exchange,
+ * since orders can route through either contract depending on market type.
  */
 async function checkAllowance() {
   if (!provider || !walletSigner) return null;
   try {
     const usdc = new ethers.Contract(C.USDC_ADDRESS, C.ERC20_ABI, provider);
-    const allowance = await usdc.allowance(walletSigner.address, C.CTF_EXCHANGE);
-    return parseFloat(ethers.utils.formatUnits(allowance, C.USDC_DECIMALS));
+    const [ctfAllowance, negRiskAllowance] = await Promise.all([
+      usdc.allowance(walletSigner.address, C.CTF_EXCHANGE),
+      usdc.allowance(walletSigner.address, C.NEG_RISK_CTF_EXCHANGE),
+    ]);
+    const ctf = parseFloat(ethers.utils.formatUnits(ctfAllowance, C.USDC_DECIMALS));
+    const negRisk = parseFloat(ethers.utils.formatUnits(negRiskAllowance, C.USDC_DECIMALS));
+    return Math.min(ctf, negRisk);
   } catch (err) {
     log.warn(`Could not check allowance: ${err.message}`);
     return null;
@@ -208,7 +208,8 @@ async function checkAllowance() {
 async function getMarketPrice(tokenId, side) {
   if (!clobClient) return null;
   try {
-    const querySide = (side === 'YES' || side === 'BUY') ? 'SELL' : 'BUY';
+    // To BUY tokens: check the ask (SELL) side. To SELL tokens: check the bid (BUY) side.
+    const querySide = (side === 'SELL') ? 'BUY' : 'SELL';
     const priceData = await clobClient.getPrice(tokenId, querySide);
     return parseFloat(priceData.price);
   } catch (err) {
@@ -233,8 +234,8 @@ async function getBookWalkPrice(tokenId, side, amountUsd) {
     if (!book) return null;
 
     // For BUY: walk the asks (sellers). For SELL: walk the bids (buyers).
-    const isBuy = (side === 'YES' || side === 'BUY');
-    const levels = isBuy ? (book.asks || []) : (book.bids || []);
+    const isSell = (side === 'SELL');
+    const levels = isSell ? (book.bids || []) : (book.asks || []);
 
     if (levels.length === 0) return null;
 
@@ -336,7 +337,7 @@ async function executeSignal(signal, currentEquity) {
       // not the actual exit price, so it would always show $0 PnL. Fetch current market price instead.
       const marketPrice = await getMarketPrice(tokenId, 'SELL');
       const exitPrice = marketPrice || price || ourPosition.current_price || ourPosition.entry_price;
-      const pnl = calculatePnl(ourPosition.entry_price, exitPrice, closeSize, ourPosition.side);
+      const pnl = calculatePnl(ourPosition.entry_price, exitPrice, closeSize);
       log.info(`SIM ${isPartial ? 'PARTIAL ' : ''}CLOSE: Sell ${tokens.toFixed(2)} tokens ($${closeSize.toFixed(2)}) on "${(marketName || marketId).slice(0, 40)}" | Entry: ${ourPosition.entry_price} → Exit: ${exitPrice} | PnL: $${pnl.toFixed(2)}`);
       db.logTrade({
         traderAddress, bucket, marketId, marketName, side: `CLOSE_${side}`,
@@ -432,7 +433,7 @@ async function executeSignal(signal, currentEquity) {
 
       const orderStatus = String(order.status || order.orderStatus || 'UNKNOWN').toUpperCase();
       const exitPrice = currentPrice || price;
-      const pnl = calculatePnl(ourPosition.entry_price, exitPrice, closeSize, ourPosition.side);
+      const pnl = calculatePnl(ourPosition.entry_price, exitPrice, closeSize);
 
       if (C.VALID_ORDER_STATUSES.includes(orderStatus)) {
         db.logTrade({
@@ -597,7 +598,7 @@ async function executeSignal(signal, currentEquity) {
     }
 
     // Order book walk: check liquidity (Novus-Tech pattern)
-    const bookWalk = await getBookWalkPrice(tokenId, side, ourSize);
+    const bookWalk = await getBookWalkPrice(tokenId, 'BUY', ourSize);
     if (bookWalk) {
       if (!bookWalk.fullyFillable) {
         log.warn(`Thin book: only $${bookWalk.fillable} of $${ourSize.toFixed(2)} fillable across ${bookWalk.levels} levels`);
@@ -616,8 +617,8 @@ async function executeSignal(signal, currentEquity) {
       }
     }
 
-    // Slippage check
-    const currentPrice = await getMarketPrice(tokenId, side);
+    // Slippage check — get ask price (what it costs to BUY)
+    const currentPrice = await getMarketPrice(tokenId, 'BUY');
     if (currentPrice) {
       const slip = risk.checkSlippage(price, currentPrice);
       if (!slip.ok) {
@@ -633,8 +634,8 @@ async function executeSignal(signal, currentEquity) {
 
     log.info(`EXEC: ${side} $${ourSize.toFixed(2)} on "${(marketName || marketId).slice(0, 40)}" @ ~${currentPrice || price}`);
 
-    // Place FOK market order (with retry on transient failures)
-    const orderSide = (side === 'YES' || side === 'BUY') ? Side.BUY : Side.SELL;
+    // Place FOK market order — always BUY (we're copying the leader's position)
+    const orderSide = Side.BUY;
     const order = await placeOrderWithRetry(
       { tokenID: tokenId, side: orderSide, amount: ourSize.toFixed(2) },
       OrderType.FOK

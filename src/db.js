@@ -215,13 +215,8 @@ function updateUnrealizedPnl(marketId, tokenId, currentPrice) {
 
   if (pos && pos.entry_price > 0) {
     const shares = pos.size_usd / pos.entry_price;
-    const isBuy = !pos.side || pos.side === 'BUY' || pos.side === 'YES';
-    let unrealized;
-    if (isBuy) {
-      unrealized = (shares * currentPrice) - pos.size_usd;
-    } else {
-      unrealized = pos.size_usd - (shares * currentPrice);
-    }
+    // All positions are token buys — profit when price rises, loss when it drops
+    const unrealized = (shares * currentPrice) - pos.size_usd;
     d.prepare(`
       UPDATE positions SET current_price = ?, unrealized_pnl = ?
       WHERE market_id = ? AND token_id = ? AND status = 'open'
