@@ -197,16 +197,16 @@ export default function SettingsView({ config, onSave }: { config?: any; onSave:
     }
   }, [config])
 
+  const hasChanges = useMemo(() => {
+    return Object.keys(values).some(k => values[k] !== initialValues[k])
+  }, [values, initialValues])
+
   // Only sync from server when we have no local edits — polling overwrote user changes before they could save
   useEffect(() => {
     if (!hasChanges && Object.keys(initialValues).length > 0) {
       setValues(initialValues)
     }
   }, [initialValues, hasChanges])
-
-  const hasChanges = useMemo(() => {
-    return Object.keys(values).some(k => values[k] !== initialValues[k])
-  }, [values, initialValues])
 
   const errors = useMemo(() => validateValues(values), [values])
   const hasErrors = Object.keys(errors).length > 0
