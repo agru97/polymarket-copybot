@@ -197,9 +197,12 @@ export default function SettingsView({ config, onSave }: { config?: any; onSave:
     }
   }, [config])
 
+  // Only sync from server when we have no local edits — polling overwrote user changes before they could save
   useEffect(() => {
-    setValues(initialValues)
-  }, [initialValues])
+    if (!hasChanges && Object.keys(initialValues).length > 0) {
+      setValues(initialValues)
+    }
+  }, [initialValues, hasChanges])
 
   const hasChanges = useMemo(() => {
     return Object.keys(values).some(k => values[k] !== initialValues[k])
@@ -259,7 +262,18 @@ export default function SettingsView({ config, onSave }: { config?: any; onSave:
             <Badge variant="warning" className="text-[10px]">Unsaved changes</Badge>
           )}
         </div>
-        <Button onClick={handleSave} disabled={saving || !hasChanges || hasErrors} size="sm">
+        <Button
+          onClick={handleSave}
+          disabled={saving || !hasChanges || hasErrors}
+          size="sm"
+          title={
+            hasErrors
+              ? 'Fix validation errors first'
+              : !hasChanges
+                ? 'No changes to save'
+                : undefined
+          }
+        >
           <Save className="h-4 w-4 mr-1.5" />
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
