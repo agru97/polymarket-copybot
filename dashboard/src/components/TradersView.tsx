@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { updateTrader, removeTrader } from '@/api'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -24,12 +25,84 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Trash2, Copy } from 'lucide-react'
+import { Trash2, Copy, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import AddTraderDialog from './AddTraderDialog'
 import { fadeInUp, defaultTransition } from '@/lib/animations'
 import { formatUsd } from '@/lib/format'
 import type { StatsData, Trader } from '@/hooks/usePolling'
+
+function EditableCell({
+  value,
+  onSave,
+  type = 'text',
+  placeholder = '',
+  suffix = '',
+  prefix = '',
+  className = '',
+  inputWidth = 'w-28',
+}: {
+  value: string | number
+  onSave: (v: string) => void
+  type?: 'text' | 'number'
+  placeholder?: string
+  suffix?: string
+  prefix?: string
+  className?: string
+  inputWidth?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(value))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (trimmed !== String(value) && trimmed !== '') onSave(trimmed)
+    setEditing(false)
+  }
+
+  const cancel = () => {
+    setDraft(String(value))
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          ref={inputRef}
+          type={type}
+          step={type === 'number' ? 'any' : undefined}
+          value={draft}
+          onChange={(e) => setDraft(type === 'text' ? e.target.value.slice(0, 32) : e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel() }}
+          onBlur={commit}
+          className={`h-7 ${inputWidth} rounded border border-border bg-background px-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
+          placeholder={placeholder}
+        />
+      </span>
+    )
+  }
+
+  const display = value === '' || value === 0 ? (placeholder || '—') : `${prefix}${value}${suffix}`
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 group cursor-pointer hover:text-foreground transition-colors ${className}`}
+      onClick={() => { setDraft(String(value)); setEditing(true) }}
+    >
+      {display}
+      <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
+    </span>
+  )
+}
 
 export default function TradersView({
   traders,
@@ -133,12 +206,74 @@ export default function TradersView({
                           </Tooltip>
                         </TooltipProvider>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{t.label || '—'}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="text-[10px]">{t.bucket}</Badge>
+                        <EditableCell
+                          value={t.label || ''}
+                          onSave={async (label) => {
+                            try {
+                              await updateTrader(t.address, { label })
+                              onUpdate()
+                              toast.success('Label updated')
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to update label')
+                            }
+                          }}
+                          placeholder="Add label..."
+                          className="text-muted-foreground"
+                        />
                       </TableCell>
-                      <TableCell className="font-mono text-right">{t.multiplier}x</TableCell>
-                      <TableCell className="font-mono text-right">${t.maxTrade}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] cursor-pointer hover:bg-primary/20 transition-colors"
+                          onClick={async () => {
+                            const newBucket = t.bucket === 'grinder' ? 'event' : 'grinder'
+                            try {
+                              await updateTrader(t.address, { bucket: newBucket })
+                              onUpdate()
+                              toast.success(`Bucket → ${newBucket}`)
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to update bucket')
+                            }
+                          }}
+                        >
+                          {t.bucket}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-right">
+                        <EditableCell
+                          value={t.multiplier}
+                          type="number"
+                          suffix="x"
+                          onSave={async (val) => {
+                            try {
+                              await updateTrader(t.address, { multiplier: parseFloat(val) })
+                              onUpdate()
+                              toast.success('Multiplier updated')
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to update')
+                            }
+                          }}
+                          inputWidth="w-20"
+                        />
+                      </TableCell>
+                      <TableCell className="font-mono text-right">
+                        <EditableCell
+                          value={t.maxTrade}
+                          type="number"
+                          prefix="$"
+                          onSave={async (val) => {
+                            try {
+                              await updateTrader(t.address, { maxTrade: parseFloat(val) })
+                              onUpdate()
+                              toast.success('Max trade updated')
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Failed to update')
+                            }
+                          }}
+                          inputWidth="w-20"
+                        />
+                      </TableCell>
                       <TableCell className={`font-mono text-right ${pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
                         {formatUsd(pnl)}
                       </TableCell>
