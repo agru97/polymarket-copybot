@@ -1,25 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Search } from 'lucide-react'
-import TradeRow from './TradeRow'
+import { DataTable } from '@/components/ui/data-table'
+import { getTradeColumns } from '@/components/trades/trade-columns'
 import { downloadExport } from '@/api'
 import type { Trade, Trader } from '@/hooks/usePolling'
+import type { SortingState } from '@tanstack/react-table'
 
-type TabValue = 'all' | 'executed' | 'simulated' | 'blocked' | 'failed'
-type SortKey = 'timestamp' | 'trader_address' | 'market_name' | 'side' | 'price' | 'size_usd' | 'pnl' | 'status'
-type SortDir = 'asc' | 'desc'
+type TabValue = 'all' | 'executed' | 'simulated' | 'blocked' | 'failed' | 'skipped'
 type DateFilter = 'all' | 'today' | '7d' | '30d'
 
 const tabs: { value: TabValue; label: string; filter?: string }[] = [
@@ -28,6 +19,7 @@ const tabs: { value: TabValue; label: string; filter?: string }[] = [
   { value: 'simulated', label: 'Simulated', filter: 'simulated' },
   { value: 'blocked', label: 'Blocked', filter: 'risk_blocked' },
   { value: 'failed', label: 'Failed', filter: 'failed' },
+  { value: 'skipped', label: 'Skipped', filter: 'filtered' },
 ]
 
 const dateFilters: { value: DateFilter; label: string }[] = [
@@ -35,17 +27,6 @@ const dateFilters: { value: DateFilter; label: string }[] = [
   { value: 'today', label: 'Today' },
   { value: '7d', label: '7d' },
   { value: '30d', label: '30d' },
-]
-
-const columns: { key: SortKey; label: string; align?: 'right' }[] = [
-  { key: 'timestamp', label: 'Time' },
-  { key: 'trader_address', label: 'Trader' },
-  { key: 'market_name', label: 'Market' },
-  { key: 'side', label: 'Side' },
-  { key: 'price', label: 'Price', align: 'right' },
-  { key: 'size_usd', label: 'Size', align: 'right' },
-  { key: 'pnl', label: 'P&L', align: 'right' },
-  { key: 'status', label: 'Status' },
 ]
 
 interface TradeLogProps {
@@ -59,8 +40,9 @@ interface TradeLogProps {
 
 export default function TradeLog({ trades, traders, page, totalTrades, pageSize, onPageChange }: TradeLogProps) {
   const [activeTab, setActiveTab] = useState<TabValue>('all')
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'timestamp', desc: true },
+  ])
   const [searchQuery, setSearchQuery] = useState('')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
 
@@ -72,7 +54,6 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
     return map
   }, [traders])
 
-  // Debounced search value
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
   const handleSearchChange = (value: string) => {
@@ -117,33 +98,14 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
     simulated: searchFiltered.filter(t => t.status === 'simulated').length,
     blocked: searchFiltered.filter(t => t.status === 'risk_blocked').length,
     failed: searchFiltered.filter(t => t.status === 'failed').length,
+    skipped: searchFiltered.filter(t => t.status === 'filtered').length,
   }
 
   const filtered = activeTab === 'all'
     ? searchFiltered
     : searchFiltered.filter(t => t.status === tabs.find(tab => tab.value === activeTab)?.filter)
 
-  const sorted = useMemo(() => {
-    if (!sortKey) return filtered
-    return [...filtered].sort((a, b) => {
-      const aVal = a[sortKey] ?? ''
-      const bVal = b[sortKey] ?? ''
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortDir === 'asc' ? aVal - bVal : bVal - aVal
-      }
-      const cmp = String(aVal).localeCompare(String(bVal))
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }, [filtered, sortKey, sortDir])
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir(key === 'timestamp' || key === 'pnl' || key === 'size_usd' || key === 'price' ? 'desc' : 'asc')
-    }
-  }
+  const columns = useMemo(() => getTradeColumns(traderLabels), [traderLabels])
 
   if (!trades.length) {
     return (
@@ -220,38 +182,14 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[400px]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {columns.map(col => (
-                  <TableHead
-                    key={col.key}
-                    className={`text-[10px] uppercase tracking-widest font-semibold cursor-pointer select-none hover:text-foreground transition-colors ${col.align === 'right' ? 'text-right' : ''}`}
-                    onClick={() => handleSort(col.key)}
-                  >
-                    {col.label}
-                    {sortKey === col.key && (
-                      <span className="ml-0.5">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
-                    )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <AnimatePresence>
-                {sorted.map((trade, i) => (
-                  <TradeRow
-                    key={`${trade.timestamp}-${i}`}
-                    trade={trade}
-                    index={i}
-                    traderLabel={traderLabels[trade.trader_address?.toLowerCase() ?? '']}
-                  />
-                ))}
-              </AnimatePresence>
-            </TableBody>
-          </Table>
-        </ScrollArea>
+        <div className="h-[400px] overflow-auto rounded-md border border-border">
+          <DataTable
+            columns={columns}
+            data={filtered}
+            sorting={sorting}
+            onSortingChange={setSorting as (updater: SortingState | ((prev: SortingState) => SortingState)) => void}
+          />
+        </div>
         {totalTrades > pageSize && (
           <div className="flex items-center justify-between pt-3 border-t mt-3">
             <span className="text-xs text-muted-foreground">

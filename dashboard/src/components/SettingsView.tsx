@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { saveSettings, updateNotifications, testNotification } from '@/api'
+import { saveSettings, updateNotifications, testNotification, getConfig } from '@/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -175,38 +175,57 @@ function NotificationsCard() {
   )
 }
 
-export default function SettingsView({ config, onSave }: { config?: any; onSave: () => void }) {
+const SETTINGS_KEYS = [
+  'maxTotalExposure', 'maxGrinderTrade', 'maxEventTrade', 'maxOpenPositions',
+  'dailyLossLimit', 'equityStopLoss', 'slippageTolerance', 'minTradeSize',
+  'grinderMultiplier', 'eventMultiplier', 'minPrice', 'maxPrice',
+] as const
+
+function configToValues(config: any): Record<string, string> {
+  if (!config) return {}
+  return {
+    maxTotalExposure: String(config.caps?.maxTotalExposure ?? ''),
+    maxGrinderTrade: String(config.caps?.maxGrinderTrade ?? ''),
+    maxEventTrade: String(config.caps?.maxEventTrade ?? ''),
+    maxOpenPositions: String(config.caps?.maxOpenPositions ?? ''),
+    dailyLossLimit: String(config.risk?.dailyLossLimit ?? ''),
+    equityStopLoss: String(config.risk?.equityStopLoss ?? ''),
+    slippageTolerance: String(config.risk?.slippageTolerance ?? ''),
+    minTradeSize: String(config.risk?.minTradeSize ?? ''),
+    grinderMultiplier: String(config.sizing?.grinderMultiplier ?? ''),
+    eventMultiplier: String(config.sizing?.eventMultiplier ?? ''),
+    minPrice: String(config.risk?.minPrice ?? ''),
+    maxPrice: String(config.risk?.maxPrice ?? ''),
+  }
+}
+
+export default function SettingsView({ config: _parentConfig, onSave }: { config?: any; onSave: () => void }) {
+  const [formConfig, setFormConfig] = useState<any>(null)
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
-  const initialValues = useMemo((): Record<string, string> => {
-    if (!config) return {}
-    return {
-      maxTotalExposure: String(config.caps?.maxTotalExposure ?? ''),
-      maxGrinderTrade: String(config.caps?.maxGrinderTrade ?? ''),
-      maxEventTrade: String(config.caps?.maxEventTrade ?? ''),
-      maxOpenPositions: String(config.caps?.maxOpenPositions ?? ''),
-      dailyLossLimit: String(config.risk?.dailyLossLimit ?? ''),
-      equityStopLoss: String(config.risk?.equityStopLoss ?? ''),
-      slippageTolerance: String(config.risk?.slippageTolerance ?? ''),
-      minTradeSize: String(config.risk?.minTradeSize ?? ''),
-      grinderMultiplier: String(config.sizing?.grinderMultiplier ?? ''),
-      eventMultiplier: String(config.sizing?.eventMultiplier ?? ''),
-      minPrice: String(config.risk?.minPrice ?? ''),
-      maxPrice: String(config.risk?.maxPrice ?? ''),
-    }
-  }, [config])
-
-  const hasChanges = useMemo(() => {
-    return Object.keys(values).some(k => values[k] !== initialValues[k])
-  }, [values, initialValues])
-
-  // Only sync from server when we have no local edits — polling overwrote user changes before they could save
+  // Fetch our own config on mount — isolates form from parent's 10s poll which was overwriting edits
   useEffect(() => {
-    if (!hasChanges && Object.keys(initialValues).length > 0) {
-      setValues(initialValues)
-    }
-  }, [initialValues, hasChanges])
+    let cancelled = false
+    getConfig()
+      .then((cfg) => {
+        if (!cancelled) {
+          setFormConfig(cfg)
+          setValues(configToValues(cfg))
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFormConfig(null)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const initialValues = useMemo(() => configToValues(formConfig), [formConfig])
+
+  // Detect changes by comparing ALL settings keys (not just keys in values)
+  const hasChanges = useMemo(() => {
+    return SETTINGS_KEYS.some(k => String(values[k] ?? '') !== String(initialValues[k] ?? ''))
+  }, [values, initialValues])
 
   const errors = useMemo(() => validateValues(values), [values])
   const hasErrors = Object.keys(errors).length > 0
@@ -223,20 +242,23 @@ export default function SettingsView({ config, onSave }: { config?: any; onSave:
     setSaving(true)
     try {
       await saveSettings({
-        maxTotalExposure: parseFloat(values.maxTotalExposure),
-        maxGrinderTrade: parseFloat(values.maxGrinderTrade),
-        maxEventTrade: parseFloat(values.maxEventTrade),
-        maxOpenPositions: parseInt(values.maxOpenPositions, 10),
-        dailyLossLimit: parseFloat(values.dailyLossLimit),
-        equityStopLoss: parseFloat(values.equityStopLoss),
-        slippageTolerance: parseFloat(values.slippageTolerance),
-        minTradeSize: parseFloat(values.minTradeSize),
-        grinderMultiplier: parseFloat(values.grinderMultiplier),
-        eventMultiplier: parseFloat(values.eventMultiplier),
-        minPrice: parseFloat(values.minPrice),
-        maxPrice: parseFloat(values.maxPrice),
+        maxTotalExposure: parseFloat(values.maxTotalExposure ?? ''),
+        maxGrinderTrade: parseFloat(values.maxGrinderTrade ?? ''),
+        maxEventTrade: parseFloat(values.maxEventTrade ?? ''),
+        maxOpenPositions: parseInt(values.maxOpenPositions ?? '0', 10),
+        dailyLossLimit: parseFloat(values.dailyLossLimit ?? ''),
+        equityStopLoss: parseFloat(values.equityStopLoss ?? ''),
+        slippageTolerance: parseFloat(values.slippageTolerance ?? ''),
+        minTradeSize: parseFloat(values.minTradeSize ?? ''),
+        grinderMultiplier: parseFloat(values.grinderMultiplier ?? ''),
+        eventMultiplier: parseFloat(values.eventMultiplier ?? ''),
+        minPrice: parseFloat(values.minPrice ?? ''),
+        maxPrice: parseFloat(values.maxPrice ?? ''),
       })
       toast.success('Settings saved successfully')
+      const fresh = await getConfig()
+      setFormConfig(fresh)
+      setValues(configToValues(fresh))
       onSave()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
@@ -245,7 +267,7 @@ export default function SettingsView({ config, onSave }: { config?: any; onSave:
     }
   }
 
-  if (!config) {
+  if (!formConfig) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
         Loading settings...

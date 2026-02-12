@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Table,
   TableBody,
@@ -70,7 +69,7 @@ export default function ActivityView() {
               No activity recorded yet
             </div>
           ) : (
-            <ScrollArea className="h-[500px]">
+            <div className="h-[500px] overflow-auto rounded-md border border-border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -106,7 +105,7 @@ export default function ActivityView() {
                   ))}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           )}
         </CardContent>
       </Card>
