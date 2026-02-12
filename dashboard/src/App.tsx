@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion'
 import { getStats } from './api'
 import Login from './components/Login'
 import Dashboard from './components/Dashboard'
+import ErrorBoundary from './components/ErrorBoundary'
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false)
@@ -38,13 +39,15 @@ function App() {
   }
 
   return (
-    <AnimatePresence mode="wait">
-      {!authenticated ? (
-        <Login key="login" onLogin={onLogin} />
-      ) : (
-        <Dashboard key="dashboard" onLogout={onLogout} />
-      )}
-    </AnimatePresence>
+    <ErrorBoundary>
+      <AnimatePresence mode="wait">
+        {!authenticated ? (
+          <Login key="login" onLogin={onLogin} />
+        ) : (
+          <Dashboard key="dashboard" onLogout={onLogout} />
+        )}
+      </AnimatePresence>
+    </ErrorBoundary>
   )
 }
 

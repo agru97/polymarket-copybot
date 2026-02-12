@@ -23,6 +23,7 @@ const db = require('./db');
 const risk = require('./risk');
 const log = require('./logger');
 const { botState } = require('./state');
+const notifications = require('./notifications');
 const C = require('./constants');
 
 // Generate session token from password
@@ -187,9 +188,11 @@ function start(getEquity, setEquity) {
 
   app.get('/api/trades', (req, res) => {
     try {
-      const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-      const trades = db.getRecentTrades(limit);
-      res.json(trades);
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const pageSize = Math.min(Math.max(1, parseInt(req.query.pageSize) || 25), 100);
+      const offset = (page - 1) * pageSize;
+      const { trades, total } = db.getPaginatedTrades(pageSize, offset);
+      res.json({ trades, total, page, pageSize });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -385,6 +388,60 @@ function start(getEquity, setEquity) {
   });
 
   // ─────────────────────────────────
+  //  CSV EXPORTS
+  // ─────────────────────────────────
+  function toCsv(rows) {
+    if (!rows.length) return '';
+    const headers = Object.keys(rows[0]);
+    const escape = (v) => {
+      const s = String(v ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.join(',')];
+    for (const row of rows) {
+      lines.push(headers.map(h => escape(row[h])).join(','));
+    }
+    return lines.join('\n');
+  }
+
+  function sendCsv(res, filename, rows) {
+    const csv = toCsv(rows);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
+  app.get('/api/exports/trades', (req, res) => {
+    try {
+      const trades = db.getAllTrades();
+      const date = new Date().toISOString().slice(0, 10);
+      sendCsv(res, `trades_${date}.csv`, trades);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/exports/activity', (req, res) => {
+    try {
+      const entries = db.getAllAuditLog();
+      const date = new Date().toISOString().slice(0, 10);
+      sendCsv(res, `activity_${date}.csv`, entries);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/exports/performance', (req, res) => {
+    try {
+      const snapshots = db.getAllSnapshots();
+      const date = new Date().toISOString().slice(0, 10);
+      sendCsv(res, `performance_${date}.csv`, snapshots);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────
   //  AUDIT LOG (v2.3)
   // ─────────────────────────────────
   app.get('/api/audit-log', (req, res) => {
@@ -392,6 +449,29 @@ function start(getEquity, setEquity) {
       const limit = Math.min(parseInt(req.query.limit) || 100, 500);
       const auditLog = db.getAuditLog(limit);
       res.json(auditLog);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────
+  //  NOTIFICATIONS
+  // ─────────────────────────────────
+  app.get('/api/notifications/status', (req, res) => {
+    res.json(notifications.getConfig());
+  });
+
+  app.patch('/api/notifications', (req, res) => {
+    const { telegramBotToken, telegramChatId, discordWebhookUrl } = req.body;
+    notifications.updateConfig({ telegramBotToken, telegramChatId, discordWebhookUrl });
+    db.logAudit('notifications_update', 'Notification settings updated', 'admin', req.ip);
+    res.json({ success: true, ...notifications.getConfig() });
+  });
+
+  app.post('/api/notifications/test', async (req, res) => {
+    try {
+      await notifications.testNotification();
+      res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

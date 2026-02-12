@@ -15,18 +15,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { RefreshCw, MoreVertical, Sun, Moon, LogOut } from 'lucide-react'
+import { formatUptime } from '@/lib/format'
 import type { StatsData } from '@/hooks/usePolling'
 import type { Theme } from '@/hooks/useTheme'
-
-function formatUptime(ms?: number) {
-  if (!ms || ms < 0) return '—'
-  const s = Math.floor(ms / 1000)
-  const m = Math.floor(s / 60)
-  const h = Math.floor(m / 60)
-  if (h > 0) return `${h}h ${m % 60}m`
-  if (m > 0) return `${m}m ${s % 60}s`
-  return `${s}s`
-}
 
 export default function StatusBar({
   stats,

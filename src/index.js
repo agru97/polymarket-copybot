@@ -23,6 +23,7 @@ const dashboard = require('./dashboard');
 const log = require('./logger');
 const { botState, STATES } = require('./state');
 const { validateConfig } = require('./validate-config');
+const notifications = require('./notifications');
 const C = require('./constants');
 
 // Equity tracking — real balance fetched from chain on startup (see main())
@@ -194,6 +195,7 @@ async function runCycle() {
   if (currentEquity <= config.risk.equityStopLoss) {
     log.error(`EQUITY STOP-LOSS: $${currentEquity.toFixed(2)} <= floor $${config.risk.equityStopLoss} — auto-pausing bot`);
     db.logAudit(C.AUDIT_ACTIONS.EQUITY_STOP_LOSS, `Equity $${currentEquity.toFixed(2)} <= floor $${config.risk.equityStopLoss}`);
+    notifications.notifyEquityStopLoss(currentEquity, config.risk.equityStopLoss);
     botState.pause(`Equity stop-loss triggered: $${currentEquity.toFixed(2)} below $${config.risk.equityStopLoss} floor`);
     return;
   }
@@ -342,6 +344,7 @@ async function main() {
   // Set state to running
   botState.start();
   db.logAudit(C.AUDIT_ACTIONS.BOT_START, `${config.bot.dryRun ? 'DRY RUN' : 'LIVE'} mode, ${activeTraders.length} traders`);
+  notifications.notifyBotStarted(config.bot.dryRun ? 'Paper' : 'Live', activeTraders.length);
   log.info('Bot started. Press Ctrl+C to stop.\n');
 
   // Main loop — uses dynamic poll interval from hot-config

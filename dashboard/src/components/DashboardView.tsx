@@ -4,16 +4,26 @@ import KPICards from './KPICards'
 import ChartsPane from './ChartsPane'
 import RiskPanel from './RiskPanel'
 import TradeLog from './TradeLog'
-import type { StatsData, Trade } from '@/hooks/usePolling'
+import type { StatsData, Trade, Trader } from '@/hooks/usePolling'
 
 export default function DashboardView({
   stats,
   trades,
+  traders,
   onAction,
+  page,
+  totalTrades,
+  pageSize,
+  onPageChange,
 }: {
   stats: StatsData | null
   trades: Trade[]
+  traders: Trader[]
   onAction: () => void
+  page: number
+  totalTrades: number
+  pageSize: number
+  onPageChange: (page: number) => void
 }) {
   return (
     <motion.div
@@ -38,7 +48,7 @@ export default function DashboardView({
       </motion.div>
 
       <motion.div variants={fadeInUp} transition={defaultTransition}>
-        <TradeLog trades={trades} />
+        <TradeLog trades={trades} traders={traders} page={page} totalTrades={totalTrades} pageSize={pageSize} onPageChange={onPageChange} />
       </motion.div>
     </motion.div>
   )

@@ -28,6 +28,7 @@ const db = require('./db');
 const log = require('./logger');
 const hotConfig = require('./hot-config');
 const { calculateOrderSize } = require('./copy-strategy');
+const notifications = require('./notifications');
 const C = require('./constants');
 
 let clobClient = null;
@@ -343,6 +344,7 @@ async function executeSignal(signal, currentEquity) {
         status: 'simulated', dryRun: true, pnl,
         notes: `Simulated ${isPartial ? 'partial ' : ''}close. ${tokens.toFixed(2)} tokens. PnL: $${pnl.toFixed(2)}`,
       });
+      notifications.notifyTradeExecuted({ side: `CLOSE_${side}`, sizeUsd: closeSize, marketName, price: exitPrice, pnl, dryRun: true });
       if (isPartial) {
         // Partial close: reduce position size, don't close entirely
         const d = db.getDb();
@@ -451,6 +453,7 @@ async function executeSignal(signal, currentEquity) {
           db.closePositionWithPnl(marketId, tokenId, exitPrice, pnl);
         }
         log.info(`${isPartial ? 'PARTIAL ' : ''}CLOSED: ${orderId} — ${tokens.toFixed(2)} tokens | PnL: $${pnl.toFixed(2)}`);
+        notifications.notifyTradeExecuted({ side: `CLOSE_${side}`, sizeUsd: closeSize, marketName, price: exitPrice, pnl, dryRun: false });
         return { executed: true, closed: !isPartial, partial: isPartial, orderId, size: closeSize, pnl };
       } else {
         db.logTrade({
@@ -536,6 +539,7 @@ async function executeSignal(signal, currentEquity) {
       sizeUsd: ourSize, leaderSizeUsd: leaderSize, status: 'risk_blocked',
       dryRun: config.bot.dryRun, notes: riskCheck.reasons.join('; '),
     });
+    notifications.notifyTradeBlocked(riskCheck.reasons, 1);
     return null;
   }
 
@@ -550,6 +554,7 @@ async function executeSignal(signal, currentEquity) {
       dryRun: true, notes: `Simulated $${ourSize.toFixed(2)}`,
     });
     db.upsertPosition({ marketId, tokenId, side, entryPrice: price, sizeUsd: ourSize, traderAddress, bucket });
+    notifications.notifyTradeExecuted({ side, sizeUsd: ourSize, marketName, price, dryRun: true });
     return { simulated: true, size: ourSize, price };
   }
 
@@ -676,6 +681,7 @@ async function executeSignal(signal, currentEquity) {
       });
       db.logAudit(C.AUDIT_ACTIONS.TRADE_EXECUTED, `${side} $${ourSize.toFixed(2)} on ${(marketName || marketId).slice(0, 30)}`);
       log.info(`FILLED: ${orderId} — $${ourSize.toFixed(2)} @ ${currentPrice || price}`);
+      notifications.notifyTradeExecuted({ side, sizeUsd: ourSize, marketName, price: currentPrice || price, dryRun: false });
       return { executed: true, orderId, size: ourSize, price: currentPrice || price };
     } else {
       // FOK was rejected

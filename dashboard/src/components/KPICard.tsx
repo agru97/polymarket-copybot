@@ -10,9 +10,9 @@ export default function KPICard({
   valueColor,
   sparkline,
 }: {
-  title: string
+  title: React.ReactNode
   value: string
-  subtitle: string
+  subtitle: React.ReactNode
   icon: React.ReactNode
   valueColor?: string
   sparkline?: React.ReactNode

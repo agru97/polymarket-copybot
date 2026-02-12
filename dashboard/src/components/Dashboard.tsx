@@ -15,14 +15,14 @@ import { pageTransition, defaultTransition } from '@/lib/animations'
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [activeView, setActiveView] = useState<View>('dashboard')
   const { theme, toggleTheme } = useTheme()
-  const { stats, trades, traders, config, error, refresh } = usePolling(
+  const { stats, trades, traders, config, error, refresh, page, setPage, totalTrades, pageSize } = usePolling(
     useCallback(() => window.location.reload(), [])
   )
 
   const renderView = () => {
     switch (activeView) {
       case 'dashboard':
-        return <DashboardView stats={stats} trades={trades} onAction={refresh} />
+        return <DashboardView stats={stats} trades={trades} traders={traders} onAction={refresh} page={page} totalTrades={totalTrades} pageSize={pageSize} onPageChange={setPage} />
       case 'traders':
         return <TradersView traders={traders} stats={stats} config={config} onUpdate={refresh} />
       case 'settings':
@@ -70,7 +70,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
 
       <BottomTabBar activeView={activeView} onViewChange={setActiveView} />
       <Toaster
-        position="bottom-right"
+        position="top-right"
         toastOptions={{
           className: 'glass-strong',
         }}

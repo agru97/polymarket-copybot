@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { getAuditLog } from '@/api'
+import { getAuditLog, downloadExport } from '@/api'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -49,7 +50,12 @@ export default function ActivityView() {
     <motion.div variants={fadeInUp} initial="hidden" animate="visible" transition={defaultTransition}>
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-semibold">Activity Log</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg font-semibold">Activity Log</CardTitle>
+            <Button variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground" onClick={() => downloadExport('activity')}>
+              Export CSV
+            </Button>
+          </div>
           <CardDescription>Recent actions and events</CardDescription>
         </CardHeader>
         <CardContent>

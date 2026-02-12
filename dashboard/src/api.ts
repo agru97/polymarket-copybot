@@ -27,28 +27,34 @@ export async function login(password: string) {
   return data;
 }
 
+async function jsonOrThrow(res: Response) {
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
 export async function getStats() {
   const res = await apiFetch('/api/stats');
   if (res.status === 401) throw new Error('Unauthorized');
-  return res.json();
+  return jsonOrThrow(res);
 }
 
-export async function getTrades(limit = 100) {
-  const res = await apiFetch(`/api/trades?limit=${limit}`);
+export async function getTrades(page = 1, pageSize = 25) {
+  const res = await apiFetch(`/api/trades?page=${page}&pageSize=${pageSize}`);
   if (res.status === 401) throw new Error('Unauthorized');
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function getTraders() {
   const res = await apiFetch('/api/traders');
   if (res.status === 401) throw new Error('Unauthorized');
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function getConfig() {
   const res = await apiFetch('/api/config');
   if (res.status === 401) throw new Error('Unauthorized');
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function controlBot(action: 'pause' | 'resume' | 'emergency-stop') {
@@ -56,7 +62,7 @@ export async function controlBot(action: 'pause' | 'resume' | 'emergency-stop') 
     method: 'POST',
     body: JSON.stringify({}),
   });
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function addTrader(address: string, bucket: string, label?: string) {
@@ -64,7 +70,7 @@ export async function addTrader(address: string, bucket: string, label?: string)
     method: 'POST',
     body: JSON.stringify({ address, bucket, label }),
   });
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function updateTrader(address: string, updates: Record<string, unknown>) {
@@ -72,12 +78,12 @@ export async function updateTrader(address: string, updates: Record<string, unkn
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function removeTrader(address: string) {
   const res = await apiFetch(`/api/traders/${address}`, { method: 'DELETE' });
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function saveSettings(settings: Record<string, unknown>) {
@@ -85,11 +91,44 @@ export async function saveSettings(settings: Record<string, unknown>) {
     method: 'PATCH',
     body: JSON.stringify(settings),
   });
-  return res.json();
+  return jsonOrThrow(res);
 }
 
 export async function getAuditLog() {
   const res = await apiFetch('/api/audit-log');
   if (res.status === 401) throw new Error('Unauthorized');
-  return res.json();
+  return jsonOrThrow(res);
+}
+
+export async function getNotificationStatus() {
+  const res = await apiFetch('/api/notifications/status');
+  if (res.status === 401) throw new Error('Unauthorized');
+  return jsonOrThrow(res);
+}
+
+export async function updateNotifications(settings: Record<string, string>) {
+  const res = await apiFetch('/api/notifications', {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  });
+  return jsonOrThrow(res);
+}
+
+export async function testNotification() {
+  const res = await apiFetch('/api/notifications/test', { method: 'POST', body: JSON.stringify({}) });
+  return jsonOrThrow(res);
+}
+
+export async function downloadExport(type: 'trades' | 'activity' | 'performance') {
+  const res = await apiFetch(`/api/exports/${type}`);
+  if (!res.ok) throw new Error('Export failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || `${type}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

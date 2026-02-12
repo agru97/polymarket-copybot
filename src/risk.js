@@ -92,6 +92,41 @@ function getRiskStatus(currentEquity) {
   const totalExposure = openPositions.reduce((sum, p) => sum + p.size_usd, 0);
   const dailyPnl = getDailyPnl();
 
+  // Consecutive loss cooldown check
+  let isCooldownActive = false;
+  let cooldownEndsAt = null;
+  const recentTrades = db.getRecentTrades(3);
+  const lastThreeLosses = recentTrades.length === 3 && recentTrades.every(t => t.pnl < 0 && t.resolved);
+  if (lastThreeLosses) {
+    const lastTradeTime = new Date(recentTrades[0].timestamp).getTime();
+    const cooldownMs = 6 * 60 * 60 * 1000;
+    if (Date.now() - lastTradeTime < cooldownMs) {
+      isCooldownActive = true;
+      cooldownEndsAt = new Date(lastTradeTime + cooldownMs).toISOString();
+    }
+  }
+
+  // Drawdown metrics
+  const { maxDrawdown, currentDrawdown } = db.getMaxDrawdown();
+
+  // Health Score (1-10): weighted average of utilization metrics
+  const exposureUtil = config.caps.maxTotalExposure > 0 ? totalExposure / config.caps.maxTotalExposure : 0;
+  const dailyLossUtil = config.risk.dailyLossLimit > 0 ? Math.max(0, -dailyPnl) / config.risk.dailyLossLimit : 0;
+  const positionUtil = config.caps.maxOpenPositions > 0 ? openPositions.length / config.caps.maxOpenPositions : 0;
+  const stopBuffer = currentEquity > 0 && config.risk.equityStopLoss > 0
+    ? 1 - Math.max(0, currentEquity - config.risk.equityStopLoss) / currentEquity
+    : 0;
+  const cooldownPenalty = isCooldownActive ? 1 : 0;
+
+  const rawScore = 1 - (
+    exposureUtil * 0.25 +
+    dailyLossUtil * 0.25 +
+    positionUtil * 0.20 +
+    stopBuffer * 0.20 +
+    cooldownPenalty * 0.10
+  );
+  const healthScore = Math.max(1, Math.min(10, Math.round(rawScore * 9 + 1)));
+
   return {
     equity: currentEquity,
     openPositions: openPositions.length,
@@ -104,6 +139,14 @@ function getRiskStatus(currentEquity) {
     isEquityStopped: currentEquity <= config.risk.equityStopLoss,
     isDailyLossStopped: dailyPnl <= -config.risk.dailyLossLimit,
     exposurePercent: (totalExposure / config.caps.maxTotalExposure * 100).toFixed(1),
+    isCooldownActive,
+    cooldownEndsAt,
+    minTradeSize: config.risk.minTradeSize,
+    maxPerTrade: config.caps.maxPerTrade,
+    priceRange: [config.risk.minPrice, config.risk.maxPrice],
+    maxDrawdown,
+    currentDrawdown,
+    healthScore,
   };
 }
 

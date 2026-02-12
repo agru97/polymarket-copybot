@@ -5,12 +5,13 @@ export interface StatsData {
   equity?: number
   dryRun?: boolean
   bot?: { state: string; cycleCount?: number; uptime?: number; consecutiveErrors?: number }
-  risk?: Record<string, number>
+  risk?: Record<string, any>
   stats?: {
     totalPnl?: number
     wins?: number
     losses?: number
     total?: number
+    profitFactor?: number
     dailyPnl?: { day: string; pnl: number; trades?: number }[]
     byBucket?: { bucket: string; pnl: number; count: number }[]
     byTrader?: { trader_address: string; count: number; pnl: number }[]
@@ -50,6 +51,8 @@ export interface Trade {
   notes?: string
 }
 
+const PAGE_SIZE = 25
+
 export function usePolling(onUnauthorized: () => void) {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -57,17 +60,21 @@ export function usePolling(onUnauthorized: () => void) {
   const [config, setConfig] = useState<any>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [totalTrades, setTotalTrades] = useState(0)
 
   const fetchData = useCallback(async () => {
     try {
       const [statsRes, tradesRes, tradersRes, configRes] = await Promise.all([
         getStats(),
-        getTrades(100),
+        getTrades(page, PAGE_SIZE),
         getTraders(),
         getConfig(),
       ])
       setStats(statsRes)
-      setTrades(Array.isArray(tradesRes) ? tradesRes : [])
+      const tradesList = Array.isArray(tradesRes) ? tradesRes : tradesRes.trades
+      setTrades(Array.isArray(tradesList) ? tradesList : [])
+      setTotalTrades(Array.isArray(tradesRes) ? tradesRes.length : (tradesRes.total || 0))
       setTraders(tradersRes.traders || [])
       setConfig(configRes)
       setError('')
@@ -82,7 +89,7 @@ export function usePolling(onUnauthorized: () => void) {
     } finally {
       setLoading(false)
     }
-  }, [onUnauthorized])
+  }, [onUnauthorized, page])
 
   useEffect(() => {
     fetchData()
@@ -90,5 +97,5 @@ export function usePolling(onUnauthorized: () => void) {
     return () => clearInterval(id)
   }, [fetchData])
 
-  return { stats, trades, traders, config, error, loading, refresh: fetchData }
+  return { stats, trades, traders, config, error, loading, refresh: fetchData, page, setPage, totalTrades, pageSize: PAGE_SIZE }
 }

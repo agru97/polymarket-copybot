@@ -10,7 +10,7 @@ interface TraderData {
 export default function TraderPnLChart({ data }: { data: TraderData[] }) {
   if (data.length === 0) {
     return (
-      <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+      <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
         No trader data yet
       </div>
     )
@@ -24,7 +24,7 @@ export default function TraderPnLChart({ data }: { data: TraderData[] }) {
   }))
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={200}>
       <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 60, left: 10, bottom: 5 }}>
         <XAxis
           type="number"

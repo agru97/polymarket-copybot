@@ -1,6 +1,6 @@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-export type TimeRange = '7d' | '14d' | '30d' | 'all'
+export type TimeRange = '24h' | '7d' | '30d' | '90d' | 'all'
 
 export default function TimeRangeSelector({
   value,
@@ -16,10 +16,11 @@ export default function TimeRangeSelector({
       onValueChange={(v) => v && onChange(v as TimeRange)}
       size="sm"
     >
-      <ToggleGroupItem value="7d" className="text-[10px] px-2 h-6">7d</ToggleGroupItem>
-      <ToggleGroupItem value="14d" className="text-[10px] px-2 h-6">14d</ToggleGroupItem>
-      <ToggleGroupItem value="30d" className="text-[10px] px-2 h-6">30d</ToggleGroupItem>
-      <ToggleGroupItem value="all" className="text-[10px] px-2 h-6">All</ToggleGroupItem>
+      <ToggleGroupItem value="24h" className="text-[10px] px-2 h-6">24H</ToggleGroupItem>
+      <ToggleGroupItem value="7d" className="text-[10px] px-2 h-6">7D</ToggleGroupItem>
+      <ToggleGroupItem value="30d" className="text-[10px] px-2 h-6">30D</ToggleGroupItem>
+      <ToggleGroupItem value="90d" className="text-[10px] px-2 h-6">90D</ToggleGroupItem>
+      <ToggleGroupItem value="all" className="text-[10px] px-2 h-6">ALL</ToggleGroupItem>
     </ToggleGroup>
   )
 }

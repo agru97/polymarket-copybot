@@ -24,15 +24,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import AddTraderDialog from './AddTraderDialog'
 import { fadeInUp, defaultTransition } from '@/lib/animations'
+import { formatUsd } from '@/lib/format'
 import type { StatsData, Trader } from '@/hooks/usePolling'
-
-function formatUsd(n: number) {
-  return `$${n.toFixed(2)}`
-}
 
 export default function TradersView({
   traders,
@@ -120,8 +117,14 @@ export default function TradersView({
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="font-mono text-xs cursor-default">
+                              <span className="font-mono text-xs cursor-default inline-flex items-center gap-1 group">
                                 {t.address.slice(0, 6)}...{t.address.slice(-4)}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(t.address); toast.success('Copied') }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </button>
                               </span>
                             </TooltipTrigger>
                             <TooltipContent>

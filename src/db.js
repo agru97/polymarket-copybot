@@ -257,6 +257,13 @@ function getRecentTrades(limit = 50) {
   return getDb().prepare(`SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?`).all(limit);
 }
 
+function getPaginatedTrades(limit = 25, offset = 0) {
+  const d = getDb();
+  const trades = d.prepare(`SELECT * FROM trades ORDER BY timestamp DESC LIMIT ? OFFSET ?`).all(limit, offset);
+  const { total } = d.prepare(`SELECT COUNT(*) as total FROM trades`).get();
+  return { trades, total };
+}
+
 function getTradeStats() {
   const d = getDb();
   const total = d.prepare(`SELECT COUNT(*) as count FROM trades`).get();
@@ -267,7 +274,39 @@ function getTradeStats() {
   const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades GROUP BY trader_address`).all();
   const dailyPnl = d.prepare(`SELECT day, pnl, trades FROM (SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30) ORDER BY day ASC`).all();
   const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all(); // 7 days of hourly, chronological
-  return { total: total.count, wins: wins.count, losses: losses.count, totalPnl: totalPnl.total, byBucket, byTrader, dailyPnl, recentSnapshots };
+  const profitFactor = getProfitFactor();
+  return { total: total.count, wins: wins.count, losses: losses.count, totalPnl: totalPnl.total, profitFactor, byBucket, byTrader, dailyPnl, recentSnapshots };
+}
+
+function getProfitFactor() {
+  const d = getDb();
+  const gains = d.prepare(`SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE pnl > 0 AND resolved = 1`).get();
+  const losses = d.prepare(`SELECT COALESCE(SUM(ABS(pnl)), 0) as total FROM trades WHERE pnl < 0 AND resolved = 1`).get();
+  if (losses.total === 0) return gains.total > 0 ? Infinity : 0;
+  return Math.round((gains.total / losses.total) * 100) / 100;
+}
+
+function getMaxDrawdown() {
+  const d = getDb();
+  const snapshots = d.prepare(`SELECT equity FROM snapshots ORDER BY timestamp ASC`).all();
+  if (snapshots.length === 0) return { maxDrawdown: 0, currentDrawdown: 0 };
+
+  let peak = snapshots[0].equity;
+  let maxDd = 0;
+  for (const s of snapshots) {
+    if (s.equity > peak) peak = s.equity;
+    const dd = peak > 0 ? (peak - s.equity) / peak : 0;
+    if (dd > maxDd) maxDd = dd;
+  }
+
+  // Current drawdown: peak is already the all-time peak after the loop
+  const latest = snapshots[snapshots.length - 1].equity;
+  const currentDd = peak > 0 ? (peak - latest) / peak : 0;
+
+  return {
+    maxDrawdown: Math.round(maxDd * 10000) / 100,      // percentage
+    currentDrawdown: Math.round(currentDd * 10000) / 100,
+  };
 }
 
 // --- Persistent Signal Dedup (survives restarts) ---
@@ -306,11 +345,27 @@ function getAuditLog(limit = 100) {
   ).all(limit);
 }
 
+function getAllTrades() {
+  return getDb().prepare(`SELECT * FROM trades ORDER BY timestamp DESC`).all();
+}
+
+function getAllAuditLog() {
+  return getDb().prepare(
+    `SELECT id, timestamp, action, actor, details, ip_address AS ip FROM audit_log ORDER BY timestamp DESC`
+  ).all();
+}
+
+function getAllSnapshots() {
+  return getDb().prepare(`SELECT * FROM snapshots ORDER BY timestamp ASC`).all();
+}
+
 module.exports = {
   init, getDb, logTrade, upsertPosition, getOpenPositions, closePosition,
   getOpenPositionByMarket, closePositionWithPnl, updateUnrealizedPnl,
   getTraderPositions, upsertTraderPosition, removeTraderPosition,
-  saveSnapshot, getRecentTrades, getTradeStats,
+  saveSnapshot, getRecentTrades, getPaginatedTrades, getTradeStats,
+  getProfitFactor, getMaxDrawdown,
   isDedupRecorded, recordDedup, cleanupExpiredDedup,
   logAudit, getAuditLog,
+  getAllTrades, getAllAuditLog, getAllSnapshots,
 };

@@ -14,7 +14,13 @@ import {
 import { Pause, Play, OctagonX } from 'lucide-react'
 import { toast } from 'sonner'
 
-export default function ControlButtons({ onAction }: { onAction: () => void }) {
+export default function ControlButtons({
+  onAction,
+  botState,
+}: {
+  onAction: () => void
+  botState?: string
+}) {
   const handleControl = async (action: 'pause' | 'resume' | 'emergency-stop') => {
     try {
       const res = await controlBot(action)
@@ -27,52 +33,68 @@ export default function ControlButtons({ onAction }: { onAction: () => void }) {
     }
   }
 
+  const isStopped = botState === 'stopped'
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleControl('pause')}
-        className="border-warning/50 text-warning hover:bg-warning/10 flex-1"
-      >
-        <Pause className="h-3.5 w-3.5 mr-1.5" />
-        Pause
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleControl('resume')}
-        className="border-profit/50 text-profit hover:bg-profit/10 flex-1"
-      >
-        <Play className="h-3.5 w-3.5 mr-1.5" />
-        Resume
-      </Button>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="destructive" size="sm" className="flex-1">
-            <OctagonX className="h-3.5 w-3.5 mr-1.5" />
-            Emergency Stop
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Emergency Stop</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will immediately halt ALL trading. The bot will stop until manually restarted.
-              Are you sure?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleControl('emergency-stop')}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+    <div className="space-y-2">
+      {/* Primary contextual action */}
+      {isStopped ? (
+        <p className="text-xs text-muted-foreground text-center py-1">Bot stopped — restart to resume</p>
+      ) : botState === 'paused' ? (
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => handleControl('resume')}
+          className="w-full"
+        >
+          <Play className="h-3.5 w-3.5 mr-1.5" />
+          Resume Bot
+        </Button>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleControl('pause')}
+          className="w-full text-muted-foreground hover:text-foreground"
+        >
+          <Pause className="h-3.5 w-3.5 mr-1.5" />
+          Pause Bot
+        </Button>
+      )}
+
+      {/* Emergency stop — smaller, separate, destructive text */}
+      {!isStopped && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full h-7 text-xs text-destructive/70 hover:text-destructive hover:bg-destructive/10"
             >
-              Stop Everything
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <OctagonX className="h-3 w-3 mr-1" />
+              Emergency Stop
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Emergency Stop</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will immediately halt ALL trading. The bot will stop until manually restarted.
+                Are you sure?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => handleControl('emergency-stop')}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Stop Everything
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   )
 }
