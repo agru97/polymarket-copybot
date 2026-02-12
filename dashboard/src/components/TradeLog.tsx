@@ -90,6 +90,7 @@ export default function TradeLog({ trades }: { trades: Trade[] }) {
                 <TableHead className="text-[10px] uppercase tracking-widest font-semibold">Side</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-widest font-semibold text-right">Price</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-widest font-semibold text-right">Size</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-widest font-semibold text-right">P&L</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-widest font-semibold">Status</TableHead>
               </TableRow>
             </TableHeader>

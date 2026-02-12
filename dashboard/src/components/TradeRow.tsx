@@ -57,6 +57,16 @@ export default function TradeRow({ trade, index }: { trade: Trade; index: number
       <TableCell className="font-mono text-right text-xs py-2.5">
         ${trade.size_usd ?? '—'}
       </TableCell>
+      <TableCell className={cn(
+        'font-mono text-right text-xs py-2.5',
+        trade.pnl != null && trade.pnl !== 0
+          ? trade.pnl > 0 ? 'text-profit' : 'text-loss'
+          : 'text-muted-foreground'
+      )}>
+        {trade.pnl != null && trade.pnl !== 0
+          ? `${trade.pnl > 0 ? '+' : ''}$${trade.pnl.toFixed(2)}`
+          : '—'}
+      </TableCell>
       <TableCell className="py-2.5">
         <div className="flex items-center gap-1.5">
           <StatusDot status={trade.status} />

@@ -45,6 +45,8 @@ export interface Trade {
   price?: number
   size_usd?: number
   status?: string
+  pnl?: number
+  resolved?: number
   notes?: string
 }
 
