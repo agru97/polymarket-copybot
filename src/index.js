@@ -288,11 +288,23 @@ async function runCycle() {
 
 async function main() {
   // Startup banner
+  const os = require('os');
+  const dashHost = (() => {
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+      }
+    }
+    return 'localhost';
+  })();
+  const dashUrl = `http://${dashHost}:${config.dashboard.port}`;
+  const mode = config.bot.dryRun ? 'DRY RUN (simulation)' : 'LIVE TRADING';
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
-  console.log(`  ║  POLYMARKET COPY BOT v2.3                    ║`);
-  console.log(`  ║  Mode: ${config.bot.dryRun ? 'DRY RUN (simulation)     ' : 'LIVE TRADING ⚡          '}  ║`);
-  console.log(`  ║  Dashboard: http://0.0.0.0:${config.dashboard.port}              ║`);
+  console.log('  ║  POLYMARKET COPY BOT v2.4                    ║');
+  console.log(`  ║  Mode: ${mode.padEnd(35)}║`);
+  console.log(`  ║  Dashboard: ${dashUrl.padEnd(32)}║`);
   console.log('  ╚══════════════════════════════════════════════╝');
   console.log('');
 

@@ -481,7 +481,16 @@ function start(getEquity, setEquity) {
   //  START SERVER
   // ─────────────────────────────────
   app.listen(config.dashboard.port, '0.0.0.0', () => {
-    log.info(`Dashboard: http://0.0.0.0:${config.dashboard.port}`);
+    const os = require('os');
+    const ifaces = os.networkInterfaces();
+    let host = 'localhost';
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) { host = iface.address; break; }
+      }
+      if (host !== 'localhost') break;
+    }
+    log.info(`Dashboard: http://${host}:${config.dashboard.port}`);
     log.info(`Auth token: ${SESSION_TOKEN.slice(0, 8)}...`);
   });
 }
