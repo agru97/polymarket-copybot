@@ -64,9 +64,23 @@ async function fetchWithRetry(url, maxRetries = 3) {
 
 async function fetchTraderPositions(traderAddress) {
   try {
-    const url = `${POLYMARKET_DATA_API}/positions?user=${traderAddress}&sizeThreshold=0.1&limit=100`;
-    const data = await fetchWithRetry(url);
-    return Array.isArray(data) ? data : [];
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 10; // Safety cap: 1000 positions max
+    let allPositions = [];
+    let offset = 0;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const url = `${POLYMARKET_DATA_API}/positions?user=${traderAddress}&sizeThreshold=0.1&limit=${PAGE_SIZE}&offset=${offset}`;
+      const data = await fetchWithRetry(url);
+      const positions = Array.isArray(data) ? data : [];
+      allPositions.push(...positions);
+
+      // If we got fewer than PAGE_SIZE, we've reached the end
+      if (positions.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
+    return allPositions;
   } catch (err) {
     log.error(`Failed to fetch positions for ${traderAddress.slice(0, 10)}...: ${err.message}`);
     return null; // Return null on failure — NOT empty array (prevents false liquidation signals)
@@ -211,19 +225,26 @@ async function detectChanges(traderAddress) {
     knownMap.delete(key);
   }
 
-  // Detect closed positions
-  for (const [key, old] of knownMap.entries()) {
-    const dedupKey = signalKey(traderAddress, old.market_id, old.token_id, 'CLOSE');
-    if (!isDuplicate(dedupKey)) {
-      signals.push({
-        type: 'CLOSE', traderAddress, bucket,
-        marketId: old.market_id, tokenId: old.token_id,
-        side: old.side, size: old.size, price: old.price, marketName: '',
-      });
-      markProcessed(dedupKey);
-      log.info(`CLOSE: ${traderAddress.slice(0, 10)}... exited ${old.side} on ${old.market_id.slice(0, 20)}`);
+  // Detect closed positions (skip on first scan — stale DB data causes false signals)
+  if (!isFirstScan) {
+    for (const [key, old] of knownMap.entries()) {
+      const dedupKey = signalKey(traderAddress, old.market_id, old.token_id, 'CLOSE');
+      if (!isDuplicate(dedupKey)) {
+        signals.push({
+          type: 'CLOSE', traderAddress, bucket,
+          marketId: old.market_id, tokenId: old.token_id,
+          side: old.side, size: old.size, price: old.price, marketName: '',
+        });
+        markProcessed(dedupKey);
+        log.info(`CLOSE: ${traderAddress.slice(0, 10)}... exited ${old.side} on ${old.market_id.slice(0, 20)}`);
+      }
+      db.removeTraderPosition(traderAddress, old.market_id, old.token_id);
     }
-    db.removeTraderPosition(traderAddress, old.market_id, old.token_id);
+  } else {
+    // First scan: clean up stale DB entries without generating signals
+    for (const [key, old] of knownMap.entries()) {
+      db.removeTraderPosition(traderAddress, old.market_id, old.token_id);
+    }
   }
 
   // Mark first scan done
