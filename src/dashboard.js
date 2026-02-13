@@ -103,7 +103,9 @@ function start(getEquity, setEquity) {
   setEquityFn = setEquity || setEquityFn;
 
   const app = express();
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: false,  // Vite-built SPA uses inline scripts & module imports
+  }));
   app.use(express.json({ limit: '10kb' }));
 
   // Rate limiting
