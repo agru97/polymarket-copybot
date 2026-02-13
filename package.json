@@ -19,7 +19,7 @@
     "@polymarket/clob-client": "^4.0.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.4.0",
-    "ethers": "^5.8.0",
+    "ethers": "^6.16.0",
     "express": "^4.21.0",
     "helmet": "^8.1.0"
   },
