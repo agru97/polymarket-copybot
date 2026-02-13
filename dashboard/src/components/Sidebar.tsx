@@ -43,6 +43,8 @@ export default function Sidebar({
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => onViewChange(id)}
+                    aria-current={active ? 'page' : undefined}
+                    aria-label={label}
                     className={cn(
                       'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                       active
@@ -70,7 +72,8 @@ export default function Sidebar({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 w-full"
+          className="h-8 w-full"
+          aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}

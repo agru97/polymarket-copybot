@@ -20,7 +20,8 @@ export default function KPICards({ stats, risk }: { stats?: StatsData | null; ri
   const wins = stats?.stats?.wins ?? 0
   const losses = stats?.stats?.losses ?? 0
   const total = stats?.stats?.total ?? 0
-  const winRate = total ? Math.round((wins / total) * 100) : 0
+  const resolved = wins + losses
+  const winRate = resolved > 0 ? Math.round((wins / resolved) * 100) : 0
 
   const snapshots = stats?.stats?.recentSnapshots || []
   const equitySparkData = snapshots.slice(-24).map(s => ({ value: s.equity }))
@@ -45,7 +46,7 @@ export default function KPICards({ stats, risk }: { stats?: StatsData | null; ri
     : stats?.dryRun ? 'Paper' : 'Live'
 
   const profitFactor = stats?.stats?.profitFactor ?? 0
-  const pfDisplay = profitFactor === Infinity ? '---' : profitFactor.toFixed(2)
+  const pfDisplay = profitFactor === Infinity ? '\u221e' : profitFactor === 0 ? '\u2014' : profitFactor.toFixed(2)
 
   const currentDrawdown = risk?.currentDrawdown ?? 0
   const maxDrawdown = risk?.maxDrawdown ?? 0

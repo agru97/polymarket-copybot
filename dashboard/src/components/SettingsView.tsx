@@ -6,24 +6,25 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Save, Bell, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import SettingsCard from './SettingsCard'
 import { fadeInUp, defaultTransition } from '@/lib/animations'
 
 const validationRules: Record<string, { min: number; max: number; label: string }> = {
-  maxTotalExposure: { min: 1, max: 100000, label: 'Max Exposure' },
-  maxGrinderTrade: { min: 0.5, max: 10000, label: 'Max Grinder' },
-  maxEventTrade: { min: 0.5, max: 10000, label: 'Max Event' },
+  maxTotalExposure: { min: 1, max: 1000000, label: 'Max Exposure' },
+  maxGrinderTrade: { min: 0.5, max: 100000, label: 'Max Grinder' },
+  maxEventTrade: { min: 0.5, max: 100000, label: 'Max Event' },
   maxOpenPositions: { min: 1, max: 100, label: 'Max Positions' },
-  dailyLossLimit: { min: 1, max: 100000, label: 'Daily Loss' },
+  dailyLossLimit: { min: 0.5, max: 100000, label: 'Daily Loss' },
   equityStopLoss: { min: 0, max: 100000, label: 'Equity Stop' },
-  slippageTolerance: { min: 0.1, max: 50, label: 'Slippage' },
-  minTradeSize: { min: 0.1, max: 1000, label: 'Min Trade' },
-  grinderMultiplier: { min: 0.01, max: 10, label: 'Grinder Mult' },
-  eventMultiplier: { min: 0.01, max: 10, label: 'Event Mult' },
-  minPrice: { min: 0, max: 1, label: 'Min Price' },
-  maxPrice: { min: 0, max: 1, label: 'Max Price' },
+  slippageTolerance: { min: 0.1, max: 20, label: 'Slippage' },
+  minTradeSize: { min: 0.1, max: 100, label: 'Min Trade' },
+  grinderMultiplier: { min: 0.01, max: 5, label: 'Grinder Mult' },
+  eventMultiplier: { min: 0.01, max: 5, label: 'Event Mult' },
+  minPrice: { min: 0.01, max: 0.99, label: 'Min Price' },
+  maxPrice: { min: 0.01, max: 0.99, label: 'Max Price' },
 }
 
 const sections = [
@@ -199,7 +200,7 @@ function configToValues(config: any): Record<string, string> {
   }
 }
 
-export default function SettingsView({ config: _parentConfig, onSave }: { config?: any; onSave: () => void }) {
+export default function SettingsView({ onSave }: { onSave: () => void }) {
   const [formConfig, setFormConfig] = useState<any>(null)
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -269,8 +270,16 @@ export default function SettingsView({ config: _parentConfig, onSave }: { config
 
   if (!formConfig) {
     return (
-      <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-        Loading settings...
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <Card key={i}><CardContent className="pt-6 space-y-4">{[1, 2, 3, 4].map(j => <Skeleton key={j} className="h-10 w-full" />)}</CardContent></Card>
+          ))}
+        </div>
       </div>
     )
   }

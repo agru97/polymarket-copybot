@@ -48,7 +48,7 @@ function generateSnapshots() {
 
 // Mock login — accept any password for dev
 app.post('/api/login', (req, res) => {
-  res.json({ token: MOCK_TOKEN });
+  res.json({ token: MOCK_TOKEN, csrfToken: 'mock-csrf-token-dev' });
 });
 
 // Auth middleware for mock
@@ -181,13 +181,13 @@ app.get('/api/config', (req, res) => {
 
 app.get('/api/audit-log', (req, res) => {
   res.json([
-    { timestamp: '2025-02-11T19:33:00Z', action: 'login', actor: 'admin', details: 'Dashboard login', ip: '127.0.0.1' },
-    { timestamp: '2025-02-11T18:15:00Z', action: 'settings_update', actor: 'admin', details: 'Updated maxTotalExposure: 80 → 90', ip: '127.0.0.1' },
+    { timestamp: '2025-02-11T19:33:00Z', action: 'login_success', actor: 'admin', details: 'Dashboard login', ip: '127.0.0.1' },
+    { timestamp: '2025-02-11T18:15:00Z', action: 'settings_change', actor: 'admin', details: 'Updated maxTotalExposure: 80 → 90', ip: '127.0.0.1' },
     { timestamp: '2025-02-11T17:00:00Z', action: 'trader_add', actor: 'admin', details: 'Added 0xabcd...ef12 (grinder)', ip: '127.0.0.1' },
-    { timestamp: '2025-02-11T16:30:00Z', action: 'pause', actor: 'admin', details: 'Manual pause', ip: '127.0.0.1' },
-    { timestamp: '2025-02-11T16:32:00Z', action: 'resume', actor: 'admin', details: 'Manual resume', ip: '127.0.0.1' },
+    { timestamp: '2025-02-11T16:30:00Z', action: 'bot_pause', actor: 'admin', details: 'Manual pause', ip: '127.0.0.1' },
+    { timestamp: '2025-02-11T16:32:00Z', action: 'bot_resume', actor: 'admin', details: 'Manual resume', ip: '127.0.0.1' },
     { timestamp: '2025-02-10T22:00:00Z', action: 'trader_update', actor: 'admin', details: 'Disabled 0xdb27...cdef', ip: '127.0.0.1' },
-    { timestamp: '2025-02-10T14:00:00Z', action: 'login', actor: 'admin', details: 'Dashboard login', ip: '192.168.1.5' },
+    { timestamp: '2025-02-10T14:00:00Z', action: 'login_success', actor: 'admin', details: 'Dashboard login', ip: '192.168.1.5' },
   ]);
 });
 

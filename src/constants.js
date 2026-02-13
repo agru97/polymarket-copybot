@@ -14,7 +14,7 @@ module.exports = {
     'https://polygon.llamarpc.com',
     'https://polygon-rpc.com',
   ],
-  USDC_ADDRESS: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+  USDC_ADDRESS: process.env.USDC_ADDRESS || '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC.e (bridged) — will need updating when Polymarket migrates to native USDC
   USDC_DECIMALS: 6,
   CTF_EXCHANGE: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',           // Polymarket CTF Exchange
   NEG_RISK_CTF_EXCHANGE: '0xC5d563A36AE78145C45a50134d48A1215220f80a',  // Polymarket Neg Risk CTF Exchange

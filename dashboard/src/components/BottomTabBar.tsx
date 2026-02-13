@@ -25,6 +25,8 @@ export default function BottomTabBar({
             <button
               key={id}
               onClick={() => onViewChange(id)}
+              aria-current={active ? 'page' : undefined}
+              aria-label={label}
               className={cn(
                 'flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
                 active ? 'text-primary' : 'text-muted-foreground'

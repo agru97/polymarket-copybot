@@ -38,14 +38,14 @@ export interface Trader {
 }
 
 export interface Trade {
-  timestamp?: string
-  trader_address?: string
-  bucket?: string
-  market_name?: string
-  side?: string
-  price?: number
-  size_usd?: number
-  status?: string
+  timestamp: string
+  trader_address: string
+  bucket: string
+  market_name: string
+  side: string
+  price: number
+  size_usd: number
+  status: string
   pnl?: number
   resolved?: number
   notes?: string
@@ -65,27 +65,39 @@ export function usePolling(onUnauthorized: () => void) {
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, tradesRes, tradersRes, configRes] = await Promise.all([
+      const results = await Promise.allSettled([
         getStats(),
         getTrades(page, PAGE_SIZE),
         getTraders(),
         getConfig(),
       ])
-      setStats(statsRes)
-      const tradesList = Array.isArray(tradesRes) ? tradesRes : tradesRes.trades
-      setTrades(Array.isArray(tradesList) ? tradesList : [])
-      setTotalTrades(Array.isArray(tradesRes) ? tradesRes.length : (tradesRes.total || 0))
-      setTraders(tradersRes.traders || [])
-      setConfig(configRes)
-      setError('')
-    } catch (err) {
-      if (err instanceof Error && err.message === 'Unauthorized') {
-        localStorage.removeItem('bot_token')
-        localStorage.removeItem('bot_csrf')
-        onUnauthorized()
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to fetch')
+
+      // Check for 401 in any rejected result
+      for (const r of results) {
+        if (r.status === 'rejected' && r.reason?.message === 'Unauthorized') {
+          localStorage.removeItem('bot_token')
+          localStorage.removeItem('bot_csrf')
+          onUnauthorized()
+          return
+        }
       }
+
+      // Update state for each successful result independently
+      if (results[0].status === 'fulfilled') setStats(results[0].value)
+      if (results[1].status === 'fulfilled') {
+        const tradesRes = results[1].value
+        const tradesList = Array.isArray(tradesRes) ? tradesRes : tradesRes.trades
+        setTrades(Array.isArray(tradesList) ? tradesList : [])
+        setTotalTrades(Array.isArray(tradesRes) ? tradesRes.length : (tradesRes.total || 0))
+      }
+      if (results[2].status === 'fulfilled') setTraders(results[2].value.traders || [])
+      if (results[3].status === 'fulfilled') setConfig(results[3].value)
+
+      // Only show error if ALL failed
+      const allFailed = results.every(r => r.status === 'rejected')
+      setError(allFailed ? 'Failed to fetch data' : '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch')
     } finally {
       setLoading(false)
     }

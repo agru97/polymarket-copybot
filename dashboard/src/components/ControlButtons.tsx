@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { controlBot } from '@/api'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,7 +22,10 @@ export default function ControlButtons({
   onAction: () => void
   botState?: string
 }) {
+  const [loading, setLoading] = useState(false)
+
   const handleControl = async (action: 'pause' | 'resume' | 'emergency-stop') => {
+    setLoading(true)
     try {
       const res = await controlBot(action)
       if (res.success) {
@@ -30,6 +34,8 @@ export default function ControlButtons({
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Control failed')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -45,6 +51,7 @@ export default function ControlButtons({
           variant="default"
           size="sm"
           onClick={() => handleControl('resume')}
+          disabled={loading}
           className="w-full"
         >
           <Play className="h-3.5 w-3.5 mr-1.5" />
@@ -55,6 +62,7 @@ export default function ControlButtons({
           variant="ghost"
           size="sm"
           onClick={() => handleControl('pause')}
+          disabled={loading}
           className="w-full text-muted-foreground hover:text-foreground"
         >
           <Pause className="h-3.5 w-3.5 mr-1.5" />

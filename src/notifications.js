@@ -7,6 +7,17 @@
 
 const log = require('./logger');
 
+const NOTIFY_COOLDOWN_MS = 10000; // 10 seconds between identical notifications
+const lastNotifyTime = new Map();
+
+function shouldNotify(key) {
+  const now = Date.now();
+  const last = lastNotifyTime.get(key) || 0;
+  if (now - last < NOTIFY_COOLDOWN_MS) return false;
+  lastNotifyTime.set(key, now);
+  return true;
+}
+
 let telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '';
 let telegramChatId = process.env.TELEGRAM_CHAT_ID || '';
 let discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL || '';
@@ -19,6 +30,14 @@ function updateConfig(cfg) {
   if (cfg.telegramBotToken !== undefined) telegramBotToken = cfg.telegramBotToken;
   if (cfg.telegramChatId !== undefined) telegramChatId = cfg.telegramChatId;
   if (cfg.discordWebhookUrl !== undefined) discordWebhookUrl = cfg.discordWebhookUrl;
+
+  // Persist to hot-config for restart durability
+  try {
+    const hotConfig = require('./hot-config');
+    if (cfg.telegramBotToken !== undefined) hotConfig.setSettingsOverride('telegramBotToken', telegramBotToken || '');
+    if (cfg.telegramChatId !== undefined) hotConfig.setSettingsOverride('telegramChatId', telegramChatId || '');
+    if (cfg.discordWebhookUrl !== undefined) hotConfig.setSettingsOverride('discordWebhookUrl', discordWebhookUrl || '');
+  } catch { /* hot-config may not be loaded yet */ }
 }
 
 function getConfig() {
@@ -85,6 +104,7 @@ async function send(message, plainText) {
 // Pre-formatted notification helpers
 
 function notifyTradeExecuted(trade) {
+  if (!shouldNotify('tradeExecuted')) return;
   const side = trade.side || '?';
   const size = (trade.sizeUsd || 0).toFixed(2);
   const market = (trade.marketName || trade.marketId || '').slice(0, 50);
@@ -98,6 +118,7 @@ function notifyTradeExecuted(trade) {
 }
 
 function notifyTradeBlocked(reasons, count) {
+  if (!shouldNotify('tradeBlocked')) return;
   if (!count) count = 1;
   const reasonText = Array.isArray(reasons) ? reasons.join('; ') : String(reasons);
   send(
@@ -107,6 +128,7 @@ function notifyTradeBlocked(reasons, count) {
 }
 
 function notifyRiskLimitHit(limitType, details) {
+  if (!shouldNotify('riskLimitHit')) return;
   send(
     `<b>Risk Limit: ${limitType}</b>\n${details}`,
     `Risk Limit: ${limitType} - ${details}`,
@@ -121,6 +143,7 @@ function notifyBotStarted(mode, traderCount) {
 }
 
 function notifyBotPaused(reason) {
+  if (!shouldNotify('botPaused')) return;
   send(
     `<b>Bot Paused</b>\n${reason || 'Manual pause'}`,
     `Bot Paused: ${reason || 'Manual pause'}`,
@@ -128,6 +151,7 @@ function notifyBotPaused(reason) {
 }
 
 function notifyEquityStopLoss(equity, floor) {
+  if (!shouldNotify('equityStopLoss')) return;
   send(
     `<b>EQUITY STOP-LOSS</b>\nEquity $${equity.toFixed(2)} hit floor $${floor.toFixed(2)} — bot auto-paused`,
     `EQUITY STOP-LOSS: Equity $${equity.toFixed(2)} hit floor $${floor.toFixed(2)} — bot auto-paused`,
@@ -140,6 +164,19 @@ async function testNotification() {
     'Test Notification: Your notification setup is working!',
   );
 }
+
+// Load persisted notification config from hot-config (survives restarts)
+function loadPersistedConfig() {
+  try {
+    const hotConfig = require('./hot-config');
+    const overrides = hotConfig.getSettingsOverrides();
+    if (overrides.telegramBotToken) telegramBotToken = overrides.telegramBotToken;
+    if (overrides.telegramChatId) telegramChatId = overrides.telegramChatId;
+    if (overrides.discordWebhookUrl) discordWebhookUrl = overrides.discordWebhookUrl;
+  } catch { /* hot-config may not be loaded yet */ }
+}
+
+loadPersistedConfig();
 
 module.exports = {
   isConfigured,

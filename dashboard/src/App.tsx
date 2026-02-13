@@ -17,9 +17,15 @@ function App() {
     }
     getStats()
       .then(() => setAuthenticated(true))
-      .catch(() => {
-        localStorage.removeItem('bot_token')
-        localStorage.removeItem('bot_csrf')
+      .catch((err) => {
+        // Only clear credentials on explicit 401, not network errors
+        if (err instanceof Error && err.message === 'Unauthorized') {
+          localStorage.removeItem('bot_token')
+          localStorage.removeItem('bot_csrf')
+        } else {
+          // Network error — keep token, assume valid
+          setAuthenticated(true)
+        }
       })
       .finally(() => setLoading(false))
   }, [])

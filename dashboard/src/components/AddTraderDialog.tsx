@@ -55,7 +55,10 @@ export default function AddTraderDialog({ onAdd }: { onAdd: () => void }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => {
+      setOpen(v)
+      if (!v) { setAddr(''); setLabel(''); setBucket('grinder') }
+    }}>
       <DialogTrigger asChild>
         <Button size="sm">
           <Plus className="h-4 w-4 mr-1.5" />
@@ -78,6 +81,7 @@ export default function AddTraderDialog({ onAdd }: { onAdd: () => void }) {
               onChange={(e) => setAddr(e.target.value)}
               placeholder="0x..."
               className="font-mono text-sm"
+              autoFocus
             />
           </div>
           <div className="space-y-2">

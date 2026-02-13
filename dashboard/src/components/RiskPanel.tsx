@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { AlertTriangle, ShieldOff, Timer } from 'lucide-react'
@@ -41,11 +42,12 @@ export default function RiskPanel({
         {risk?.healthScore != null && (
           <>
             <div className="flex items-center justify-center">
-              <div className={`flex items-center justify-center w-14 h-14 rounded-full border-2 font-bold text-xl ${
+              <div className={cn(
+                'flex items-center justify-center w-14 h-14 rounded-full border-2 font-bold text-xl',
                 risk.healthScore >= 8 ? 'border-profit text-profit' :
                 risk.healthScore >= 5 ? 'border-warning text-warning' :
                 'border-loss text-loss'
-              }`}>
+              )}>
                 {risk.healthScore}
               </div>
             </div>

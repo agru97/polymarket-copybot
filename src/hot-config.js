@@ -24,6 +24,7 @@ const HOT_CONFIG_PATH = path.join(__dirname, '..', 'data', 'hot-config.json');
 let hotConfig = {
   traders: [],
   pollInterval: config.bot.pollInterval,
+  settingsOverrides: {},
   version: 1,
   updatedAt: null,
 };
@@ -35,7 +36,23 @@ function load() {
   try {
     if (fs.existsSync(HOT_CONFIG_PATH)) {
       const raw = fs.readFileSync(HOT_CONFIG_PATH, 'utf8');
-      hotConfig = JSON.parse(raw);
+      try {
+        hotConfig = JSON.parse(raw);
+      } catch (parseErr) {
+        log.error(`Hot config JSON corrupted: ${parseErr.message}`);
+        // Try backup if available
+        const backupPath = HOT_CONFIG_PATH + '.bak';
+        if (fs.existsSync(backupPath)) {
+          try {
+            hotConfig = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+            log.warn('Recovered hot config from backup');
+          } catch {
+            log.error('Backup also corrupted — using defaults');
+          }
+        }
+      }
+      if (!hotConfig.settingsOverrides) hotConfig.settingsOverrides = {};
+      applySettingsOverrides();
       log.info(`Hot config loaded: ${hotConfig.traders.length} trader(s)`);
     } else {
       // First run — seed from .env
@@ -89,6 +106,11 @@ function save() {
     const dir = path.dirname(HOT_CONFIG_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
+    // Back up current config before overwriting
+    if (fs.existsSync(HOT_CONFIG_PATH)) {
+      try { fs.copyFileSync(HOT_CONFIG_PATH, HOT_CONFIG_PATH + '.bak'); } catch { /* ok */ }
+    }
+
     // Atomic write: write to temp file, then rename (rename is atomic on most FS)
     const tmpPath = HOT_CONFIG_PATH + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(hotConfig, null, 2));
@@ -98,6 +120,53 @@ function save() {
     // Clean up temp file if rename failed
     try { fs.unlinkSync(HOT_CONFIG_PATH + '.tmp'); } catch { /* ok */ }
   }
+}
+
+// ─── Settings Overrides (persist dashboard changes across restarts) ──
+
+/** Map of setting keys to their config location */
+const SETTINGS_MAP = {
+  // risk.*
+  dailyLossLimit:    { section: 'risk', key: 'dailyLossLimit' },
+  equityStopLoss:    { section: 'risk', key: 'equityStopLoss' },
+  slippageTolerance: { section: 'risk', key: 'slippageTolerance' },
+  minTradeSize:      { section: 'risk', key: 'minTradeSize' },
+  minPrice:          { section: 'risk', key: 'minPrice' },
+  maxPrice:          { section: 'risk', key: 'maxPrice' },
+  // caps.*
+  maxPerTrade:       { section: 'caps', key: 'maxPerTrade' },
+  maxGrinderTrade:   { section: 'caps', key: 'maxGrinderTrade' },
+  maxEventTrade:     { section: 'caps', key: 'maxEventTrade' },
+  maxTotalExposure:  { section: 'caps', key: 'maxTotalExposure' },
+  maxOpenPositions:  { section: 'caps', key: 'maxOpenPositions' },
+  // sizing.*
+  grinderMultiplier: { section: 'sizing', key: 'grinderMultiplier' },
+  eventMultiplier:   { section: 'sizing', key: 'eventMultiplier' },
+};
+
+function applySettingsOverrides() {
+  const overrides = hotConfig.settingsOverrides || {};
+  let count = 0;
+  for (const [field, val] of Object.entries(overrides)) {
+    const spec = SETTINGS_MAP[field];
+    if (spec && config[spec.section]) {
+      config[spec.section][spec.key] = val;
+      count++;
+    }
+  }
+  if (count > 0) {
+    log.info(`Applied ${count} settings override(s) from hot-config`);
+  }
+}
+
+function getSettingsOverrides() {
+  return hotConfig.settingsOverrides || {};
+}
+
+function setSettingsOverride(key, value) {
+  if (!hotConfig.settingsOverrides) hotConfig.settingsOverrides = {};
+  hotConfig.settingsOverrides[key] = value;
+  save();
 }
 
 // ─── Trader CRUD ───────────────────────────────
@@ -171,6 +240,8 @@ function removeTrader(address) {
   if (idx === -1) return { error: 'Trader not found' };
 
   const removed = hotConfig.traders.splice(idx, 1)[0];
+  // Clear first-scan guard so re-added traders get a fresh scan
+  try { require('./monitor').clearFirstScan(addr); } catch { /* ok if monitor not loaded yet */ }
   save();
   log.info(`Trader removed: ${addr.slice(0, 10)}... [${removed.bucket}]`);
   return { success: true, removed };
@@ -188,10 +259,10 @@ function updateTrader(address, updates) {
     trader.bucket = updates.bucket;
   }
   if (updates.multiplier !== undefined) {
-    trader.multiplier = Math.max(0.01, Math.min(2.0, parseFloat(updates.multiplier) || 0.15));
+    trader.multiplier = Math.max(0.01, Math.min(10.0, parseFloat(updates.multiplier) || 1.0));
   }
   if (updates.maxTrade !== undefined) {
-    trader.maxTrade = Math.max(1, Math.min(50, parseFloat(updates.maxTrade) || 5));
+    trader.maxTrade = Math.max(1, Math.min(config.caps.maxTotalExposure || 1000, parseFloat(updates.maxTrade) || 5));
   }
   if (updates.label !== undefined) {
     trader.label = String(updates.label).slice(0, 32);
@@ -252,4 +323,6 @@ module.exports = {
   getBucketForTrader,
   getMultiplierForTrader,
   getMaxTradeForTrader,
+  getSettingsOverrides,
+  setSettingsOverride,
 };

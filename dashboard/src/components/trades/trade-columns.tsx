@@ -1,5 +1,3 @@
-'use client'
-
 import { type ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'
@@ -89,6 +87,7 @@ export function getTradeColumns(traderLabels: Record<string, string>): ColumnDef
                         toast.success('Copied')
                       }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                      aria-label="Copy address"
                     >
                       <Copy className="h-3 w-3" />
                     </button>

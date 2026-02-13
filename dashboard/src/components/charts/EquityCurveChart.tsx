@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts'
 import ChartTooltip from './ChartTooltip'
+import { Switch } from '@/components/ui/switch'
 import type { TimeRange } from './TimeRangeSelector'
 
 interface Snapshot {
@@ -76,11 +77,11 @@ export default function EquityCurveChart({
     <div>
       <div className="flex justify-end mb-1">
         <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
+          <Switch
             checked={showDrawdown}
-            onChange={e => setShowDrawdown(e.target.checked)}
-            className="rounded border-border h-3 w-3"
+            onCheckedChange={setShowDrawdown}
+            className="scale-75 origin-right"
+            aria-label="Toggle drawdown overlay"
           />
           Show Drawdown
         </label>

@@ -230,7 +230,7 @@ async function detectChanges(traderAddress) {
           log.info(`NEW: ${traderAddress.slice(0, 10)}... → ${side} on ${marketName.slice(0, 50)} @ ${price} ($${valueUsd.toFixed(0)})`);
         }
       }
-    } else if (size > known.size * (1 + CHANGE_THRESHOLD)) {
+    } else if (size > known.size * (1 + CHANGE_THRESHOLD) && !isFirstScan) {
       // ── Position increased ──
       const increaseRatio = (size - known.size) / known.size;
       const increaseUsd = valueUsd * (increaseRatio / (1 + increaseRatio));
@@ -246,15 +246,29 @@ async function detectChanges(traderAddress) {
     } else if (size < known.size * (1 - CHANGE_THRESHOLD) && !isFirstScan) {
       // ── Position decreased (partial close) ──
       const decreaseRatio = (known.size - size) / known.size;
-      const decreaseUsd = valueUsd * (decreaseRatio / (1 - decreaseRatio));
-      const dk = signalKey(traderAddress, marketId, tokenId, `DEC_${Math.floor(size)}`);
-      if (!isDuplicate(dk)) {
-        signals.push({
-          type: 'CLOSE', traderAddress, bucket, marketId, tokenId,
-          side, size: decreaseUsd, price, marketName, isPartialClose: true,
-        });
-        markProcessed(dk);
-        log.info(`PARTIAL CLOSE: ${traderAddress.slice(0, 10)}... -${(decreaseRatio * 100).toFixed(0)}% on ${marketName.slice(0, 50)}`);
+
+      // If >90% decrease, treat as full close — prevents division-by-near-zero
+      if (decreaseRatio > 0.9) {
+        const dk = signalKey(traderAddress, marketId, tokenId, 'CLOSE');
+        if (!isDuplicate(dk)) {
+          signals.push({
+            type: 'CLOSE', traderAddress, bucket, marketId, tokenId,
+            side, size: valueUsd, price, marketName,
+          });
+          markProcessed(dk);
+          log.info(`NEAR-TOTAL CLOSE: ${traderAddress.slice(0, 10)}... -${(decreaseRatio * 100).toFixed(0)}% on ${marketName.slice(0, 50)} (treating as full close)`);
+        }
+      } else {
+        const decreaseUsd = valueUsd * (decreaseRatio / (1 - decreaseRatio));
+        const dk = signalKey(traderAddress, marketId, tokenId, `DEC_${Math.floor(size)}`);
+        if (!isDuplicate(dk)) {
+          signals.push({
+            type: 'CLOSE', traderAddress, bucket, marketId, tokenId,
+            side, size: decreaseUsd, price, marketName, isPartialClose: true,
+          });
+          markProcessed(dk);
+          log.info(`PARTIAL CLOSE: ${traderAddress.slice(0, 10)}... -${(decreaseRatio * 100).toFixed(0)}% on ${marketName.slice(0, 50)}`);
+        }
       }
     }
 
@@ -272,6 +286,9 @@ async function detectChanges(traderAddress) {
         signals.push({
           type: 'CLOSE', traderAddress, bucket,
           marketId: old.market_id, tokenId: old.token_id,
+          // size is cost basis (tokens × entry price), not current value — current market price
+          // is unavailable for disappeared positions. This is only used for logging; full closes
+          // use ourPosition.size_usd in trader.js, so accuracy isn't critical here.
           side: old.side, size: old.size * old.price, price: old.price, marketName: '',
         });
         markProcessed(dk);
@@ -335,4 +352,8 @@ async function scanAllTraders() {
   return allSignals;
 }
 
-module.exports = { scanAllTraders, fetchTraderPositions, fetchMarketInfo, detectChanges };
+function clearFirstScan(traderAddress) {
+  firstScanDone.delete(traderAddress.toLowerCase());
+}
+
+module.exports = { scanAllTraders, fetchTraderPositions, fetchMarketInfo, detectChanges, clearFirstScan };

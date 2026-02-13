@@ -34,7 +34,7 @@ export default function RiskGauge({
           {formatValue(value)} / {formatMax(max)}
         </span>
       </div>
-      <div className="relative h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+      <div className="relative h-1.5 w-full rounded-full bg-secondary overflow-hidden" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',

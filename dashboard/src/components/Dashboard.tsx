@@ -15,18 +15,21 @@ import { pageTransition, defaultTransition } from '@/lib/animations'
 export default function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [activeView, setActiveView] = useState<View>('dashboard')
   const { theme, toggleTheme } = useTheme()
-  const { stats, trades, traders, config, error, refresh, page, setPage, totalTrades, pageSize } = usePolling(
-    useCallback(() => window.location.reload(), [])
-  )
+  const handleUnauthorized = useCallback(() => {
+    localStorage.removeItem('bot_token')
+    localStorage.removeItem('bot_csrf')
+    onLogout()
+  }, [onLogout])
+  const { stats, trades, traders, error, refresh, page, setPage, totalTrades, pageSize } = usePolling(handleUnauthorized)
 
   const renderView = () => {
     switch (activeView) {
       case 'dashboard':
         return <DashboardView stats={stats} trades={trades} traders={traders} onAction={refresh} page={page} totalTrades={totalTrades} pageSize={pageSize} onPageChange={setPage} />
       case 'traders':
-        return <TradersView traders={traders} stats={stats} config={config} onUpdate={refresh} />
+        return <TradersView traders={traders} stats={stats} onUpdate={refresh} />
       case 'settings':
-        return <SettingsView config={config} onSave={refresh} />
+        return <SettingsView onSave={refresh} />
       case 'activity':
         return <ActivityView />
       default:

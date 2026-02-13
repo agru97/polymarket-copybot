@@ -24,11 +24,12 @@ interface AuditEntry {
 }
 
 const actionVariant: Record<string, 'profit' | 'warning' | 'loss' | 'info' | 'secondary'> = {
-  login: 'info',
-  pause: 'warning',
-  resume: 'profit',
-  'emergency-stop': 'loss',
-  settings_update: 'secondary',
+  login_success: 'info',
+  login_failed: 'loss',
+  bot_pause: 'warning',
+  bot_resume: 'profit',
+  bot_emergency_stop: 'loss',
+  settings_change: 'secondary',
   trader_add: 'profit',
   trader_remove: 'loss',
   trader_update: 'secondary',
@@ -37,11 +38,16 @@ const actionVariant: Record<string, 'profit' | 'warning' | 'loss' | 'info' | 'se
 export default function ActivityView() {
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     getAuditLog()
       .then(data => setEntries(Array.isArray(data) ? data : data.entries || []))
-      .catch(() => setEntries([]))
+      .catch((err) => {
+        if (!(err instanceof Error && err.message === 'Unauthorized')) {
+          setError('Failed to load activity log')
+        }
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -58,6 +64,11 @@ export default function ActivityView() {
           <CardDescription>Recent actions and events</CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4">
+              {error}
+            </div>
+          )}
           {loading ? (
             <div className="space-y-2">
               {[...Array(8)].map((_, i) => (

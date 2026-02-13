@@ -6,6 +6,7 @@ interface Props {
 
 interface State {
   hasError: boolean
+  error?: Error
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
@@ -14,8 +15,12 @@ export default class ErrorBoundary extends Component<Props, State> {
     this.state = { hasError: false }
   }
 
-  static getDerivedStateFromError(): State {
-    return { hasError: true }
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary]', error, errorInfo.componentStack)
   }
 
   render() {
@@ -25,14 +30,22 @@ export default class ErrorBoundary extends Component<Props, State> {
           <div className="text-center space-y-4 max-w-md px-6">
             <h2 className="text-lg font-semibold text-foreground">Something went wrong</h2>
             <p className="text-sm text-muted-foreground">
-              An unexpected error occurred. Refresh the page to try again.
+              An unexpected error occurred. Try again or refresh the page.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => this.setState({ hasError: false, error: undefined })}
+                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                Refresh Page
+              </button>
+            </div>
           </div>
         </div>
       )

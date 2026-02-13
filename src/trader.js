@@ -99,7 +99,10 @@ async function initClobClient() {
 
   try {
     // Always create provider + signer — needed for balance reads even in dry-run
-    provider = new ethers.providers.JsonRpcProvider(C.POLYGON_RPC);
+    provider = new ethers.providers.StaticJsonRpcProvider(
+      { url: C.POLYGON_RPC, timeout: 10000 },
+      { name: 'polygon', chainId: C.POLYGON_CHAIN_ID }
+    );
     walletSigner = new Wallet(config.wallet.privateKey, provider);
     log.info(`Wallet: ${walletSigner.address}`);
 
@@ -166,7 +169,10 @@ async function getUSDCBalance() {
   // Try fallback RPCs
   for (const rpc of (C.POLYGON_RPC_FALLBACKS || [])) {
     try {
-      const fallbackProvider = new ethers.providers.JsonRpcProvider(rpc);
+      const fallbackProvider = new ethers.providers.StaticJsonRpcProvider(
+        { url: rpc, timeout: 10000 },
+        { name: 'polygon', chainId: C.POLYGON_CHAIN_ID }
+      );
       const usdc = new ethers.Contract(C.USDC_ADDRESS, C.ERC20_ABI, fallbackProvider);
       const balance = await usdc.balanceOf(walletSigner.address);
       log.info(`Balance fetched via fallback RPC: ${rpc}`);
@@ -322,7 +328,9 @@ async function executeSignal(signal, currentEquity) {
       const knownLeaderPositions = db.getTraderPositions(traderAddress);
       const knownLeader = knownLeaderPositions.find(p => p.market_id === marketId && p.token_id === tokenId);
       if (knownLeader && knownLeader.size > 0) {
-        const closeFraction = leaderSize / (knownLeader.size + leaderSize); // decrease / original
+        // Convert knownLeader.size (tokens) to USD using signal price for unit consistency
+        const knownLeaderUsd = knownLeader.size * price;
+        const closeFraction = leaderSize / (knownLeaderUsd + leaderSize); // decrease / original (both USD)
         closeSize = Math.round(ourPosition.size_usd * closeFraction * 100) / 100;
         log.info(`Proportional close: leader closed ${(closeFraction * 100).toFixed(0)}% → selling $${closeSize.toFixed(2)} of $${ourPosition.size_usd.toFixed(2)}`);
       }
@@ -399,13 +407,13 @@ async function executeSignal(signal, currentEquity) {
       }
 
       // Use token-based sell amount (critical fix: not USD notional)
-      const sellAmountUsd = (tokens * sellPrice).toFixed(2);
-      log.info(`EXEC ${isPartial ? 'PARTIAL ' : ''}CLOSE: Sell ${tokens.toFixed(2)} tokens (~$${sellAmountUsd}) on "${(marketName || marketId).slice(0, 40)}" @ ~${sellPrice}`);
+      const sellTokens = parseFloat(tokens.toFixed(6));
+      log.info(`EXEC ${isPartial ? 'PARTIAL ' : ''}CLOSE: Sell ${tokens.toFixed(2)} tokens on "${(marketName || marketId).slice(0, 40)}" @ ~${sellPrice}`);
 
       // Place FOK sell order (with retry on transient failures)
       const orderSide = Side.SELL;
       const order = await placeOrderWithRetry(
-        { tokenID: tokenId, side: orderSide, amount: sellAmountUsd },
+        { tokenID: tokenId, side: orderSide, amount: sellTokens },
         OrderType.FOK
       );
 
@@ -427,6 +435,18 @@ async function executeSignal(signal, currentEquity) {
           traderAddress, bucket, marketId, marketName, side: `CLOSE_${side}`,
           price: sellPrice, sizeUsd: closeSize, leaderSizeUsd: leaderSize,
           status: 'failed', dryRun: false, notes: 'Missing orderId in response',
+        });
+        return null;
+      }
+
+      if (order.success === false) {
+        const errorMsg = order.errorMsg || 'Unknown error';
+        log.error(`Order rejected by API: ${errorMsg}`);
+        db.logTrade({
+          traderAddress, bucket, marketId, marketName, side: `CLOSE_${side}`,
+          price: sellPrice, sizeUsd: closeSize, leaderSizeUsd: leaderSize,
+          status: 'failed', dryRun: false,
+          notes: `API rejected: ${errorMsg}`,
         });
         return null;
       }
@@ -659,6 +679,18 @@ async function executeSignal(signal, currentEquity) {
         traderAddress, bucket, marketId, marketName, side, price,
         sizeUsd: ourSize, leaderSizeUsd: leaderSize, status: 'failed',
         dryRun: false, notes: 'Missing orderId — phantom trade prevention',
+      });
+      return null;
+    }
+
+    if (order.success === false) {
+      const errorMsg = order.errorMsg || 'Unknown error';
+      log.error(`Order rejected by API: ${errorMsg}`);
+      db.logTrade({
+        traderAddress, bucket, marketId, marketName, side,
+        price: currentPrice || price, sizeUsd: ourSize,
+        leaderSizeUsd: leaderSize, status: 'failed', dryRun: false,
+        notes: `API rejected: ${errorMsg}`,
       });
       return null;
     }

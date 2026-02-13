@@ -77,7 +77,7 @@ export default function DailyPnLChart({
         <Line
           type="monotone"
           dataKey="cumulative"
-          name="Cumulative"
+          name="Period Cumulative"
           stroke="hsl(var(--foreground))"
           strokeWidth={2}
           dot={false}

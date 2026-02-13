@@ -1,6 +1,15 @@
 const { config, getMaxTrade } = require('./config');
 const db = require('./db');
 
+function getConsecutiveLosses() {
+  const d = db.getDb();
+  const recentResolved = d.prepare(
+    `SELECT pnl, timestamp FROM trades WHERE resolved = 1 AND status IN ('executed', 'simulated') ORDER BY timestamp DESC LIMIT 3`
+  ).all();
+  const allLosses = recentResolved.length === 3 && recentResolved.every(t => t.pnl < 0);
+  return { recentResolved, allLosses };
+}
+
 function checkRiskLimits(bucket, proposedSizeUsd, currentEquity) {
   const reasons = [];
 
@@ -42,10 +51,9 @@ function checkRiskLimits(bucket, proposedSizeUsd, currentEquity) {
   }
 
   // 7. Consecutive loss check (3 in a row = cooldown)
-  const recentTrades = db.getRecentTrades(3);
-  const lastThreeLosses = recentTrades.length === 3 && recentTrades.every(t => t.pnl < 0 && t.resolved);
-  if (lastThreeLosses) {
-    const lastTradeTime = new Date(recentTrades[0].timestamp).getTime();
+  const { recentResolved, allLosses } = getConsecutiveLosses();
+  if (allLosses) {
+    const lastTradeTime = new Date(recentResolved[0].timestamp + 'Z').getTime();
     const cooldownMs = 6 * 60 * 60 * 1000; // 6 hours
     if (Date.now() - lastTradeTime < cooldownMs) {
       reasons.push('Cooling off: 3 consecutive losses, waiting 6 hours');
@@ -55,17 +63,6 @@ function checkRiskLimits(bucket, proposedSizeUsd, currentEquity) {
   return { allowed: reasons.length === 0, reasons };
 }
 
-function calculatePositionSize(bucket, leaderNotional) {
-  const { config: cfg, getMultiplier } = require('./config');
-  const multiplier = getMultiplier(bucket);
-  const maxForBucket = getMaxTrade(bucket);
-  let size = leaderNotional * multiplier;
-  size = Math.min(size, maxForBucket);
-  size = Math.min(size, cfg.caps.maxPerTrade);
-  size = Math.round(size * 100) / 100;
-  return size;
-}
-
 function checkPriceFilter(price) {
   if (price < config.risk.minPrice) return { ok: false, reason: `Price ${price} below min ${config.risk.minPrice}` };
   if (price > config.risk.maxPrice) return { ok: false, reason: `Price ${price} above max ${config.risk.maxPrice}` };
@@ -73,18 +70,24 @@ function checkPriceFilter(price) {
 }
 
 function checkSlippage(leaderPrice, ourPrice) {
-  const slippage = Math.abs(ourPrice - leaderPrice) / leaderPrice * 100;
-  if (slippage > config.risk.slippageTolerance) {
-    return { ok: false, slippage, reason: `Slippage ${slippage.toFixed(2)}% exceeds tolerance ${config.risk.slippageTolerance}%` };
+  if (!leaderPrice || leaderPrice <= 0) return { ok: true, slippage: 0 };
+  // Only penalize if we'd pay MORE than the leader (unfavorable slippage)
+  // Favorable slippage (ourPrice < leaderPrice for buys) is fine
+  const slippage = ((ourPrice - leaderPrice) / leaderPrice) * 100;
+  const tolerance = config.risk.slippageTolerance;
+  if (slippage > tolerance) {
+    return { ok: false, slippage, reason: `Slippage ${slippage.toFixed(2)}% > ${tolerance}% tolerance (leader: ${leaderPrice}, market: ${ourPrice})` };
   }
-  return { ok: true, slippage };
+  return { ok: true, slippage: Math.max(0, slippage) };
 }
 
 function getDailyPnl() {
   const d = db.getDb();
   const today = new Date().toISOString().split('T')[0];
-  const result = d.prepare(`SELECT COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE date(timestamp) = ? AND resolved = 1`).get(today);
-  return result.pnl;
+  const realized = d.prepare(`SELECT COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE date(timestamp) = ? AND resolved = 1`).get(today);
+  // Include unrealized PnL from open positions to prevent over-exposure
+  const unrealized = d.prepare(`SELECT COALESCE(SUM(unrealized_pnl), 0) as pnl FROM positions WHERE status = 'open'`).get();
+  return realized.pnl + unrealized.pnl;
 }
 
 function getRiskStatus(currentEquity) {
@@ -95,10 +98,9 @@ function getRiskStatus(currentEquity) {
   // Consecutive loss cooldown check
   let isCooldownActive = false;
   let cooldownEndsAt = null;
-  const recentTrades = db.getRecentTrades(3);
-  const lastThreeLosses = recentTrades.length === 3 && recentTrades.every(t => t.pnl < 0 && t.resolved);
-  if (lastThreeLosses) {
-    const lastTradeTime = new Date(recentTrades[0].timestamp).getTime();
+  const { recentResolved, allLosses } = getConsecutiveLosses();
+  if (allLosses) {
+    const lastTradeTime = new Date(recentResolved[0].timestamp + 'Z').getTime();
     const cooldownMs = 6 * 60 * 60 * 1000;
     if (Date.now() - lastTradeTime < cooldownMs) {
       isCooldownActive = true;
@@ -138,7 +140,7 @@ function getRiskStatus(currentEquity) {
     equityStopLoss: config.risk.equityStopLoss,
     isEquityStopped: currentEquity <= config.risk.equityStopLoss,
     isDailyLossStopped: dailyPnl <= -config.risk.dailyLossLimit,
-    exposurePercent: (totalExposure / config.caps.maxTotalExposure * 100).toFixed(1),
+    exposurePercent: config.caps.maxTotalExposure > 0 ? Math.round(totalExposure / config.caps.maxTotalExposure * 1000) / 10 : 0,
     isCooldownActive,
     cooldownEndsAt,
     minTradeSize: config.risk.minTradeSize,
@@ -150,4 +152,4 @@ function getRiskStatus(currentEquity) {
   };
 }
 
-module.exports = { checkRiskLimits, calculatePositionSize, checkPriceFilter, checkSlippage, getRiskStatus, getDailyPnl };
+module.exports = { checkRiskLimits, checkPriceFilter, checkSlippage, getRiskStatus, getDailyPnl };

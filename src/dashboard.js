@@ -15,6 +15,7 @@
  */
 
 const express = require('express');
+const helmet = require('helmet');
 const path = require('path');
 const crypto = require('crypto');
 const { config } = require('./config');
@@ -25,6 +26,10 @@ const log = require('./logger');
 const { botState } = require('./state');
 const notifications = require('./notifications');
 const C = require('./constants');
+
+function safeError(err) {
+  return process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message;
+}
 
 // Generate session token from password
 const SESSION_TOKEN = crypto
@@ -41,7 +46,10 @@ function generateCsrfToken(sessionToken) {
   return token;
 }
 function validateCsrf(sessionToken, csrfToken) {
-  return csrfTokens.get(sessionToken) === csrfToken;
+  const expected = csrfTokens.get(sessionToken);
+  if (!expected || !csrfToken) return false;
+  if (expected.length !== csrfToken.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(csrfToken, 'utf8'));
 }
 
 // Simple rate limiter
@@ -59,6 +67,13 @@ function rateLimit(ip, maxPerMinute = 60) {
   return record.count > maxPerMinute;
 }
 
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of rateLimits.entries()) {
+    if (now > record.resetAt) rateLimits.delete(key);
+  }
+}, 300000); // Clean up every 5 minutes
+
 // Auth middleware
 function requireAuth(req, res, next) {
   // Allow /health without auth
@@ -66,10 +81,13 @@ function requireAuth(req, res, next) {
   if (req.path === '/health') return next();
 
   const token = req.headers.authorization?.replace('Bearer ', '') ||
-                req.query.token ||
                 req.cookies?.token;
 
-  if (token === SESSION_TOKEN) return next();
+  if (token && token.length === SESSION_TOKEN.length) {
+    const tokenBuf = Buffer.from(token, 'utf8');
+    const expectedBuf = Buffer.from(SESSION_TOKEN, 'utf8');
+    if (crypto.timingSafeEqual(tokenBuf, expectedBuf)) return next();
+  }
 
   // Check if login request (req.path is relative to /api mount)
   if (req.path === '/login') return next();
@@ -85,7 +103,8 @@ function start(getEquity, setEquity) {
   setEquityFn = setEquity || setEquityFn;
 
   const app = express();
-  app.use(express.json());
+  app.use(helmet());
+  app.use(express.json({ limit: '10kb' }));
 
   // Rate limiting
   app.use((req, res, next) => {
@@ -102,7 +121,7 @@ function start(getEquity, setEquity) {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/login') {
       return next();
     }
-    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+    const token = req.headers.authorization?.replace('Bearer ', '');
     const csrfToken = req.headers['x-csrf-token'] || req.body?._csrf;
     if (token && csrfToken && validateCsrf(token, csrfToken)) {
       return next();
@@ -114,7 +133,7 @@ function start(getEquity, setEquity) {
     if (csrfTokens.has(token)) {
       return res.status(403).json({ error: 'Invalid CSRF token' });
     }
-    next(); // No CSRF required if no session yet
+    return res.status(403).json({ error: 'CSRF validation failed' });
   });
 
   // Static files (dashboard UI)
@@ -134,7 +153,7 @@ function start(getEquity, setEquity) {
     // Constant-time comparison to prevent timing attacks (audit fix)
     const inputHash = crypto
       .createHash('sha256')
-      .update(password + 'polymarket-bot-salt')
+      .update(password + C.SESSION_SALT)
       .digest('hex')
       .slice(0, 32);
     const tokenBuf = Buffer.from(SESSION_TOKEN, 'utf8');
@@ -182,7 +201,7 @@ function start(getEquity, setEquity) {
         equity,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -194,7 +213,7 @@ function start(getEquity, setEquity) {
       const { trades, total } = db.getPaginatedTrades(pageSize, offset);
       res.json({ trades, total, page, pageSize });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -225,7 +244,7 @@ function start(getEquity, setEquity) {
     try {
       res.json(db.getOpenPositions());
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -265,7 +284,7 @@ function start(getEquity, setEquity) {
       const traders = hotConfig.getTraders();
       res.json({ traders, total: traders.length, active: traders.filter(t => t.enabled).length });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -282,7 +301,7 @@ function start(getEquity, setEquity) {
       db.logAudit(C.AUDIT_ACTIONS.TRADER_ADD, `${address.slice(0, 10)}... [${bucket}]`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -302,7 +321,7 @@ function start(getEquity, setEquity) {
       db.logAudit(C.AUDIT_ACTIONS.TRADER_UPDATE, `${address.slice(0, 10)}... → ${JSON.stringify(updates)}`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -316,7 +335,7 @@ function start(getEquity, setEquity) {
       db.logAudit(C.AUDIT_ACTIONS.TRADER_REMOVE, `${address.slice(0, 10)}...`, 'dashboard', req.ip);
       res.json(result);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -361,6 +380,7 @@ function start(getEquity, setEquity) {
           val = Math.max(spec.min, Math.min(spec.max, val));
           if (spec.integer) val = Math.round(val);
           config[spec.section][spec.key] = val;
+          hotConfig.setSettingsOverride(field, val);
           updated[field] = val;
           changes.push(`${field} → ${val}`);
         }
@@ -369,11 +389,11 @@ function start(getEquity, setEquity) {
       // ── Sizing multipliers ──
       if (req.body.grinderMultiplier !== undefined) {
         const val = Math.max(0.01, Math.min(5, parseFloat(req.body.grinderMultiplier)));
-        if (!isNaN(val)) { config.sizing.grinderMultiplier = val; updated.grinderMultiplier = val; changes.push(`grinderMultiplier → ${val}`); }
+        if (!isNaN(val)) { config.sizing.grinderMultiplier = val; hotConfig.setSettingsOverride('grinderMultiplier', val); updated.grinderMultiplier = val; changes.push(`grinderMultiplier → ${val}`); }
       }
       if (req.body.eventMultiplier !== undefined) {
         const val = Math.max(0.01, Math.min(5, parseFloat(req.body.eventMultiplier)));
-        if (!isNaN(val)) { config.sizing.eventMultiplier = val; updated.eventMultiplier = val; changes.push(`eventMultiplier → ${val}`); }
+        if (!isNaN(val)) { config.sizing.eventMultiplier = val; hotConfig.setSettingsOverride('eventMultiplier', val); updated.eventMultiplier = val; changes.push(`eventMultiplier → ${val}`); }
       }
 
       if (changes.length > 0) {
@@ -383,7 +403,7 @@ function start(getEquity, setEquity) {
 
       res.json({ success: true, ...updated });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -417,7 +437,7 @@ function start(getEquity, setEquity) {
       const date = new Date().toISOString().slice(0, 10);
       sendCsv(res, `trades_${date}.csv`, trades);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -427,7 +447,7 @@ function start(getEquity, setEquity) {
       const date = new Date().toISOString().slice(0, 10);
       sendCsv(res, `activity_${date}.csv`, entries);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -437,7 +457,7 @@ function start(getEquity, setEquity) {
       const date = new Date().toISOString().slice(0, 10);
       sendCsv(res, `performance_${date}.csv`, snapshots);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -450,7 +470,7 @@ function start(getEquity, setEquity) {
       const auditLog = db.getAuditLog(limit);
       res.json(auditLog);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
@@ -473,26 +493,26 @@ function start(getEquity, setEquity) {
       await notifications.testNotification();
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: safeError(err) });
     }
   });
 
   // ─────────────────────────────────
   //  START SERVER
   // ─────────────────────────────────
-  app.listen(config.dashboard.port, '0.0.0.0', () => {
-    const os = require('os');
-    const ifaces = os.networkInterfaces();
-    let host = 'localhost';
-    for (const name of Object.keys(ifaces)) {
-      for (const iface of ifaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) { host = iface.address; break; }
-      }
-      if (host !== 'localhost') break;
-    }
+  const host = process.env.DASHBOARD_HOST || '127.0.0.1';
+  const server = app.listen(config.dashboard.port, host, () => {
     log.info(`Dashboard: http://${host}:${config.dashboard.port}`);
-    log.info(`Auth token: ${SESSION_TOKEN.slice(0, 8)}...`);
+    log.info('Dashboard auth token generated');
   });
+
+  // SPA fallback: serve index.html for all non-API routes (client-side routing)
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  });
+
+  return server;
 }
 
 module.exports = { start };

@@ -111,7 +111,6 @@ export default function TradersView({
 }: {
   traders: Trader[]
   stats: StatsData | null
-  config?: any
   onUpdate: () => void
 }) {
   const byTrader = stats?.stats?.byTrader || []
@@ -155,6 +154,7 @@ export default function TradersView({
           </div>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -310,6 +310,7 @@ export default function TradersView({
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </motion.div>

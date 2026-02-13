@@ -15,6 +15,8 @@
  *   - Safety limits: max order, min order, max position, max daily volume
  */
 
+const db = require('./db');
+
 const STRATEGIES = {
   PERCENTAGE: 'PERCENTAGE',
   FIXED: 'FIXED',
@@ -200,7 +202,20 @@ function calculateOrderSize(strategyConfig, leaderOrderSize, availableBalance, c
     }
   }
 
-  // Step 7: Check available balance (with 1% safety buffer)
+  // Step 7: Daily volume cap
+  if (cfg.maxDailyVolumeUsd) {
+    const todayVolume = db.getDailyVolume();
+    const remaining = cfg.maxDailyVolumeUsd - todayVolume;
+    if (remaining <= 0) {
+      finalAmount = 0;
+      reasoning += ' → Daily volume limit reached';
+    } else if (finalAmount > remaining) {
+      finalAmount = remaining;
+      reasoning += ` → Capped by daily volume ($${remaining.toFixed(2)} remaining)`;
+    }
+  }
+
+  // Step 8: Check available balance (with 1% safety buffer)
   const maxAffordable = availableBalance * 0.99;
   if (finalAmount > maxAffordable) {
     finalAmount = maxAffordable;
@@ -208,7 +223,7 @@ function calculateOrderSize(strategyConfig, leaderOrderSize, availableBalance, c
     reasoning += ` → Reduced to balance ($${maxAffordable.toFixed(2)})`;
   }
 
-  // Step 8: Check minimum order size
+  // Step 9: Check minimum order size
   if (finalAmount < cfg.minOrderSizeUsd) {
     belowMinimum = true;
     reasoning += ` → Below minimum $${cfg.minOrderSizeUsd}`;

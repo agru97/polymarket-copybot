@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Search } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { getTradeColumns } from '@/components/trades/trade-columns'
@@ -113,10 +112,10 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">Trade Log</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
+        <CardContent>
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            No trades recorded yet. Trades will appear here once the bot starts executing.
+          </div>
         </CardContent>
       </Card>
     )

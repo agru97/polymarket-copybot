@@ -4,6 +4,8 @@ module.exports = {
     script: 'src/index.js',
     instances: 1,
     autorestart: true,
+    max_restarts: 10,
+    min_uptime: '5s',
     watch: false,
     max_memory_restart: '300M',
     env: {

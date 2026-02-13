@@ -4,15 +4,15 @@ const getCsrf = () => localStorage.getItem('bot_csrf') || '';
 export async function apiFetch(url: string, opts: RequestInit = {}) {
   const token = getToken();
   const csrf = getCsrf();
-  return fetch(url, {
-    ...opts,
-    headers: {
-      ...opts.headers,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(csrf ? { 'x-csrf-token': csrf } : {}),
-    },
-  });
+  const headers: Record<string, string> = {
+    ...opts.headers as Record<string, string>,
+    Authorization: `Bearer ${token}`,
+    ...(csrf ? { 'x-csrf-token': csrf } : {}),
+  };
+  if (opts.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, { ...opts, headers });
 }
 
 export async function login(password: string) {
@@ -28,6 +28,7 @@ export async function login(password: string) {
 }
 
 async function jsonOrThrow(res: Response) {
+  if (res.status === 401) throw new Error('Unauthorized');
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -35,25 +36,21 @@ async function jsonOrThrow(res: Response) {
 
 export async function getStats() {
   const res = await apiFetch('/api/stats');
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
 export async function getTrades(page = 1, pageSize = 25) {
   const res = await apiFetch(`/api/trades?page=${page}&pageSize=${pageSize}`);
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
 export async function getTraders() {
   const res = await apiFetch('/api/traders');
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
 export async function getConfig() {
   const res = await apiFetch('/api/config');
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
@@ -96,13 +93,11 @@ export async function saveSettings(settings: Record<string, unknown>) {
 
 export async function getAuditLog() {
   const res = await apiFetch('/api/audit-log');
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
 export async function getNotificationStatus() {
   const res = await apiFetch('/api/notifications/status');
-  if (res.status === 401) throw new Error('Unauthorized');
   return jsonOrThrow(res);
 }
 
@@ -121,6 +116,7 @@ export async function testNotification() {
 
 export async function downloadExport(type: 'trades' | 'activity' | 'performance') {
   const res = await apiFetch(`/api/exports/${type}`);
+  if (res.status === 401) throw new Error('Unauthorized');
   if (!res.ok) throw new Error('Export failed');
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -130,5 +126,5 @@ export async function downloadExport(type: 'trades' | 'activity' | 'performance'
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

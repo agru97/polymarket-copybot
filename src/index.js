@@ -26,6 +26,8 @@ const { validateConfig } = require('./validate-config');
 const notifications = require('./notifications');
 const C = require('./constants');
 
+let server = null;
+
 // Equity tracking — real balance fetched from chain on startup (see main())
 let currentEquity = parseFloat(process.env.MAX_TOTAL_EXPOSURE) || 110; // fallback until chain fetch
 let STARTING_EQUITY = currentEquity;
@@ -37,24 +39,31 @@ let STARTING_EQUITY = currentEquity;
 function autoSizeRiskFromBalance(balance) {
   if (balance <= 0) return; // chain fetch failed — keep .env defaults
 
+  // In dry-run mode, use more generous sizing so paper trading generates
+  // enough simulated trades to evaluate strategy performance.
+  const isDryRun = config.bot.dryRun;
   const rules = [
     // [envVar, configPath, percentage, minValue, description]
-    ['MAX_TOTAL_EXPOSURE', 'caps.maxTotalExposure', 1.00, 5, 'Max total exposure'],
-    ['EQUITY_STOP_LOSS',   'risk.equityStopLoss',   0.60, 3, 'Equity stop-loss floor'],
-    ['DAILY_LOSS_LIMIT',   'risk.dailyLossLimit',   0.15, 1, 'Daily loss limit'],
-    ['MAX_PER_TRADE',      'caps.maxPerTrade',       0.20, 1, 'Max per trade'],
-    ['MAX_GRINDER_TRADE',  'caps.maxGrinderTrade',   0.15, 1, 'Max grinder trade'],
-    ['MAX_EVENT_TRADE',    'caps.maxEventTrade',     0.20, 1, 'Max event trade'],
+    ['MAX_TOTAL_EXPOSURE', 'caps.maxTotalExposure', 1.00, 5,  'Max total exposure'],
+    ['EQUITY_STOP_LOSS',   'risk.equityStopLoss',   0.60, 3,  'Equity stop-loss floor'],
+    ['DAILY_LOSS_LIMIT',   'risk.dailyLossLimit',   isDryRun ? 0.50 : 0.15, 2, 'Daily loss limit'],
+    ['MAX_PER_TRADE',      'caps.maxPerTrade',       isDryRun ? 0.40 : 0.20, 2, 'Max per trade'],
+    ['MAX_GRINDER_TRADE',  'caps.maxGrinderTrade',   isDryRun ? 0.30 : 0.15, 2, 'Max grinder trade'],
+    ['MAX_EVENT_TRADE',    'caps.maxEventTrade',     isDryRun ? 0.40 : 0.20, 2, 'Max event trade'],
   ];
 
   let anyAutoSized = false;
 
+  const overrides = hotConfig.getSettingsOverrides();
+
   for (const [envVar, path, pct, min, desc] of rules) {
     // Skip if user explicitly set this in .env
     if (process.env[envVar]) continue;
+    // Skip if user changed this via dashboard (persisted in hot-config)
+    const [section, key] = path.split('.');
+    if (overrides[key] !== undefined) continue;
 
     const autoVal = Math.max(min, parseFloat((balance * pct).toFixed(2)));
-    const [section, key] = path.split('.');
     config[section][key] = autoVal;
     log.info(`  Auto-sized ${desc}: $${autoVal} (${(pct * 100).toFixed(0)}% of $${balance.toFixed(2)})`);
     anyAutoSized = true;
@@ -348,7 +357,7 @@ async function main() {
   // If gotBalance is true, updateEquityFromChain already called autoSizeRiskFromBalance
 
   // Start dashboard (with auth + controls + trader management)
-  dashboard.start(getEquity, setEquity);
+  server = dashboard.start(getEquity, setEquity);
 
   // Log config summary (now from hot-config)
   const activeTraders = hotConfig.getActiveTraders();
@@ -387,6 +396,12 @@ async function shutdown(signal) {
   log.info(`${signal} received — shutting down gracefully...`);
   botState.stop();
 
+  // Stop accepting new HTTP connections
+  if (server) {
+    server.close();
+    if (server.closeIdleConnections) server.closeIdleConnections();
+  }
+
   // Give current cycle a moment to finish
   await new Promise(r => setTimeout(r, 2000));
 
@@ -403,6 +418,9 @@ async function shutdown(signal) {
     log.info('Final snapshot saved.');
   } catch { /* ok */ }
 
+  // Close database cleanly (checkpoints WAL)
+  try { db.close(); } catch { /* ok */ }
+
   process.exit(0);
 }
 
@@ -411,14 +429,18 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('unhandledRejection', (err) => {
   log.error(`Unhandled rejection: ${err.message || err}`);
+  log.error(err.stack || '');
   botState.recordError(err);
+  process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
   log.error(`Uncaught exception: ${err.message}`);
   log.error(err.stack);
   botState.recordError(err);
-  // Don't exit — let PM2 handle restarts if needed
+  // Exit so PM2 can restart cleanly — continuing after uncaughtException
+  // risks corrupted state (per Node.js docs)
+  process.exit(1);
 });
 
 // Export for dashboard access

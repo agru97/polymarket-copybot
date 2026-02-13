@@ -89,6 +89,8 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
     CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
     CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_positions_market_token_status ON positions(market_id, token_id, status);
+    CREATE INDEX IF NOT EXISTS idx_trades_market_status_resolved ON trades(market_id, status, resolved);
   `);
 
   return db;
@@ -123,35 +125,31 @@ function logTrade(trade) {
  */
 function upsertPosition(pos) {
   const d = getDb();
+  const _upsert = d.transaction((pos) => {
+    const existing = d.prepare(
+      `SELECT * FROM positions WHERE market_id = ? AND token_id = ? AND status = 'open' LIMIT 1`
+    ).get(pos.marketId, pos.tokenId);
 
-  // Check for existing open position in same market
-  const existing = d.prepare(
-    `SELECT * FROM positions WHERE market_id = ? AND token_id = ? AND status = 'open' LIMIT 1`
-  ).get(pos.marketId, pos.tokenId);
-
-  if (existing) {
-    // Accumulate: weighted average entry price, sum sizes
-    const oldSize = existing.size_usd;
-    const newSize = oldSize + pos.sizeUsd;
-    const weightedEntry = ((existing.entry_price * oldSize) + (pos.entryPrice * pos.sizeUsd)) / newSize;
-
-    d.prepare(`
-      UPDATE positions
-      SET size_usd = ?, entry_price = ?, current_price = ?
-      WHERE id = ?
-    `).run(
-      Math.round(newSize * 100) / 100,
-      Math.round(weightedEntry * 10000) / 10000,
-      pos.entryPrice,  // latest price as current
-      existing.id
-    );
-  } else {
-    // New position
-    d.prepare(`
-      INSERT INTO positions (market_id, token_id, side, entry_price, size_usd, trader_address, bucket)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(pos.marketId, pos.tokenId, pos.side, pos.entryPrice, pos.sizeUsd, pos.traderAddress, pos.bucket);
-  }
+    if (existing) {
+      const oldSize = existing.size_usd;
+      const newSize = oldSize + pos.sizeUsd;
+      const weightedEntry = ((existing.entry_price * oldSize) + (pos.entryPrice * pos.sizeUsd)) / newSize;
+      d.prepare(`
+        UPDATE positions SET size_usd = ?, entry_price = ?, current_price = ? WHERE id = ?
+      `).run(
+        Math.round(newSize * 100) / 100,
+        Math.round(weightedEntry * 10000) / 10000,
+        pos.entryPrice,
+        existing.id
+      );
+    } else {
+      d.prepare(`
+        INSERT INTO positions (market_id, token_id, side, entry_price, size_usd, trader_address, bucket)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(pos.marketId, pos.tokenId, pos.side, pos.entryPrice, pos.sizeUsd, pos.traderAddress, pos.bucket);
+    }
+  });
+  _upsert(pos);
 }
 
 function getOpenPositions() {
@@ -183,23 +181,23 @@ function getOpenPositionByMarket(marketId, tokenId) {
  */
 function closePositionWithPnl(marketId, tokenId, exitPrice, pnl) {
   const d = getDb();
-  d.prepare(`
-    UPDATE positions
-    SET status = 'closed',
-        closed_at = datetime('now'),
-        current_price = ?,
-        unrealized_pnl = ?
-    WHERE market_id = ? AND token_id = ? AND status = 'open'
-  `).run(exitPrice, pnl, marketId, tokenId);
+  const _close = d.transaction(() => {
+    d.prepare(`
+      UPDATE positions SET status = 'closed', closed_at = datetime('now'), current_price = ?, unrealized_pnl = ?
+      WHERE market_id = ? AND token_id = ? AND status = 'open'
+    `).run(exitPrice, pnl, marketId, tokenId);
 
-  // Also resolve the original entry trade with the exit PnL
-  d.prepare(`
-    UPDATE trades
-    SET pnl = ?, resolved = 1
-    WHERE market_id = ? AND status = 'executed' AND resolved = 0
-    AND side NOT LIKE 'CLOSE_%'
-    ORDER BY timestamp DESC LIMIT 1
-  `).run(pnl, marketId);
+    d.prepare(`
+      UPDATE trades SET pnl = ?, resolved = 1
+      WHERE id = (
+        SELECT id FROM trades
+        WHERE market_id = ? AND status IN ('executed', 'simulated') AND resolved = 0
+        AND side NOT LIKE 'CLOSE_%'
+        ORDER BY timestamp DESC LIMIT 1
+      )
+    `).run(pnl, marketId);
+  });
+  _close();
 }
 
 /**
@@ -261,16 +259,22 @@ function getPaginatedTrades(limit = 25, offset = 0) {
 
 function getTradeStats() {
   const d = getDb();
-  const total = d.prepare(`SELECT COUNT(*) as count FROM trades`).get();
-  const wins = d.prepare(`SELECT COUNT(*) as count FROM trades WHERE pnl > 0`).get();
-  const losses = d.prepare(`SELECT COUNT(*) as count FROM trades WHERE pnl < 0 AND resolved = 1`).get();
-  const totalPnl = d.prepare(`SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE resolved = 1`).get();
-  const byBucket = d.prepare(`SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades GROUP BY bucket`).all();
-  const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades GROUP BY trader_address`).all();
+  const summary = d.prepare(`
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN pnl > 0 AND resolved = 1 THEN 1 ELSE 0 END) as wins,
+      SUM(CASE WHEN pnl < 0 AND resolved = 1 THEN 1 ELSE 0 END) as losses,
+      COALESCE(SUM(CASE WHEN resolved = 1 THEN pnl ELSE 0 END), 0) as totalPnl,
+      COALESCE(SUM(CASE WHEN pnl > 0 AND resolved = 1 THEN pnl ELSE 0 END), 0) as gains,
+      COALESCE(SUM(CASE WHEN pnl < 0 AND resolved = 1 THEN ABS(pnl) ELSE 0 END), 0) as grossLosses
+    FROM trades
+  `).get();
+  const byBucket = d.prepare(`SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY bucket`).all();
+  const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY trader_address`).all();
   const dailyPnl = d.prepare(`SELECT day, pnl, trades FROM (SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30) ORDER BY day ASC`).all();
-  const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all(); // 7 days of hourly, chronological
-  const profitFactor = getProfitFactor();
-  return { total: total.count, wins: wins.count, losses: losses.count, totalPnl: totalPnl.total, profitFactor, byBucket, byTrader, dailyPnl, recentSnapshots };
+  const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all();
+  const profitFactor = summary.grossLosses === 0 ? (summary.gains > 0 ? Infinity : 0) : Math.round((summary.gains / summary.grossLosses) * 100) / 100;
+  return { total: summary.total, wins: summary.wins, losses: summary.losses, totalPnl: summary.totalPnl, profitFactor, byBucket, byTrader, dailyPnl, recentSnapshots };
 }
 
 function getProfitFactor() {
@@ -331,7 +335,7 @@ function logAudit(action, details = '', actor = 'system', ipAddress = '') {
       INSERT INTO audit_log (action, actor, details, ip_address)
       VALUES (?, ?, ?, ?)
     `).run(action, actor, String(details).slice(0, 500), ipAddress);
-  } catch { /* non-critical */ }
+  } catch (e) { /* non-critical — audit log write failed */ }
 }
 
 function getAuditLog(limit = 100) {
@@ -354,8 +358,23 @@ function getAllSnapshots() {
   return getDb().prepare(`SELECT * FROM snapshots ORDER BY timestamp ASC`).all();
 }
 
+function getDailyVolume() {
+  const today = new Date().toISOString().split('T')[0];
+  const row = getDb().prepare(
+    `SELECT COALESCE(SUM(ABS(size_usd)), 0) as vol FROM trades WHERE date(timestamp) = ? AND status IN ('executed', 'simulated')`
+  ).get(today);
+  return row.vol;
+}
+
+function close() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
 module.exports = {
-  init, getDb, logTrade, upsertPosition, getOpenPositions, closePosition,
+  init, getDb, close, logTrade, upsertPosition, getOpenPositions, closePosition,
   getOpenPositionByMarket, closePositionWithPnl, updateUnrealizedPnl,
   getTraderPositions, upsertTraderPosition, removeTraderPosition,
   saveSnapshot, getRecentTrades, getPaginatedTrades, getTradeStats,
@@ -363,4 +382,5 @@ module.exports = {
   isDedupRecorded, recordDedup, cleanupExpiredDedup,
   logAudit, getAuditLog,
   getAllTrades, getAllAuditLog, getAllSnapshots,
+  getDailyVolume,
 };
