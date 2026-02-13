@@ -209,14 +209,28 @@ export function getTradeColumns(traderLabels: Record<string, string>): ColumnDef
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Notes" />
       ),
-      cell: ({ row }) => (
-        <span
-          className="max-w-[220px] truncate text-xs text-muted-foreground block"
-          title={row.original.notes ?? undefined}
-        >
-          {row.original.notes || '—'}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const notes = row.original.notes
+        if (!notes) return <span className="text-xs text-muted-foreground">—</span>
+        const isTruncated = notes.length > 40
+        if (!isTruncated) {
+          return <span className="text-xs text-muted-foreground">{notes}</span>
+        }
+        return (
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="max-w-[220px] truncate text-xs text-muted-foreground block cursor-default">
+                  {notes}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[360px] whitespace-normal">
+                <span className="text-xs">{notes}</span>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      },
     },
   ]
 }

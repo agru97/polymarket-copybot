@@ -242,6 +242,17 @@ export default function SettingsView({ onSave }: { onSave: () => void }) {
     }
     setSaving(true)
     try {
+      // Build summary of changed fields before saving
+      const changedFields = SETTINGS_KEYS.filter(
+        k => String(values[k] ?? '') !== String(initialValues[k] ?? '')
+      )
+      const changeSummary = changedFields.map(k => {
+        const rule = validationRules[k]
+        const label = rule?.label ?? k
+        const suffix = sections.flatMap(s => s.fields).find(f => f.key === k)?.suffix ?? ''
+        return `${label}: ${suffix}${values[k]}`
+      })
+
       await saveSettings({
         maxTotalExposure: parseFloat(values.maxTotalExposure ?? ''),
         maxGrinderTrade: parseFloat(values.maxGrinderTrade ?? ''),
@@ -256,7 +267,10 @@ export default function SettingsView({ onSave }: { onSave: () => void }) {
         minPrice: parseFloat(values.minPrice ?? ''),
         maxPrice: parseFloat(values.maxPrice ?? ''),
       })
-      toast.success('Settings saved successfully')
+      const description = changeSummary.length > 0
+        ? `Updated: ${changeSummary.join(', ')}`
+        : 'Settings saved'
+      toast.success(description)
       const fresh = await getConfig()
       setFormConfig(fresh)
       setValues(configToValues(fresh))

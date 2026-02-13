@@ -271,10 +271,12 @@ function getTradeStats() {
   `).get();
   const byBucket = d.prepare(`SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY bucket`).all();
   const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY trader_address`).all();
+  const byMarket = d.prepare(`SELECT market_name, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') AND market_name != '' GROUP BY market_name ORDER BY ABS(COALESCE(SUM(pnl), 0)) DESC LIMIT 15`).all();
+  const resolvedTrades = d.prepare(`SELECT timestamp, pnl FROM trades WHERE resolved = 1 ORDER BY timestamp ASC`).all();
   const dailyPnl = d.prepare(`SELECT day, pnl, trades FROM (SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30) ORDER BY day ASC`).all();
   const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all();
   const profitFactor = summary.grossLosses === 0 ? (summary.gains > 0 ? Infinity : 0) : Math.round((summary.gains / summary.grossLosses) * 100) / 100;
-  return { total: summary.total, wins: summary.wins, losses: summary.losses, totalPnl: summary.totalPnl, profitFactor, byBucket, byTrader, dailyPnl, recentSnapshots };
+  return { total: summary.total, wins: summary.wins, losses: summary.losses, totalPnl: summary.totalPnl, profitFactor, byBucket, byTrader, byMarket, resolvedTrades, dailyPnl, recentSnapshots };
 }
 
 function getProfitFactor() {

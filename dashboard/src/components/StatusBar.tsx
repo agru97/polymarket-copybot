@@ -19,25 +19,38 @@ import { formatUptime } from '@/lib/format'
 import type { StatsData } from '@/hooks/usePolling'
 import type { Theme } from '@/hooks/useTheme'
 
+function formatLastUpdated(date: Date | null, now: Date): { text: string; staleness: 'fresh' | 'warning' | 'error' } {
+  if (!date) return { text: 'No data', staleness: 'error' }
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  if (seconds < 5) return { text: 'Just now', staleness: 'fresh' }
+  if (seconds < 60) return { text: `${seconds}s ago`, staleness: seconds > 30 ? 'warning' : 'fresh' }
+  const minutes = Math.floor(seconds / 60)
+  return { text: `${minutes}m ago`, staleness: 'error' }
+}
+
 export default function StatusBar({
   stats,
   theme,
   onToggleTheme,
   onRefresh,
   onLogout,
+  lastUpdated,
 }: {
   stats: StatsData | null
   theme: Theme
   onToggleTheme: () => void
   onRefresh: () => void
   onLogout: () => void
+  lastUpdated: Date | null
 }) {
-  const [time, setTime] = useState(new Date().toLocaleTimeString())
+  const [time, setTime] = useState(new Date())
 
   useEffect(() => {
-    const id = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000)
+    const id = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(id)
   }, [])
+
+  const { text: lastUpdatedText, staleness } = formatLastUpdated(lastUpdated, time)
 
   const isLive = stats?.dryRun === false
   const botState = stats?.bot?.state
@@ -75,8 +88,13 @@ export default function StatusBar({
       </div>
 
       <div className="flex items-center gap-1">
+        <span className={`text-[10px] font-mono tabular-nums mr-2 hidden sm:block ${
+          staleness === 'error' ? 'text-destructive' : staleness === 'warning' ? 'text-yellow-500' : 'text-muted-foreground'
+        }`}>
+          {lastUpdatedText}
+        </span>
         <span className="text-xs font-mono tabular-nums text-muted-foreground hidden sm:block mr-2">
-          {time}
+          {time.toLocaleTimeString()}
         </span>
         <TooltipProvider delayDuration={300}>
           <Tooltip>

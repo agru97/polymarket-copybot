@@ -3,6 +3,7 @@ import { fadeInUp, staggerChildren, defaultTransition } from '@/lib/animations'
 import KPICards from './KPICards'
 import ChartsPane from './ChartsPane'
 import RiskPanel from './RiskPanel'
+import OpenPositions from './OpenPositions'
 import TradeLog from './TradeLog'
 import type { StatsData, Trade, Trader } from '@/hooks/usePolling'
 
@@ -45,6 +46,10 @@ export default function DashboardView({
             <RiskPanel stats={stats} onAction={onAction} />
           </div>
         </div>
+      </motion.div>
+
+      <motion.div variants={fadeInUp} transition={defaultTransition}>
+        <OpenPositions positions={stats?.positions ?? []} />
       </motion.div>
 
       <motion.div variants={fadeInUp} transition={defaultTransition}>

@@ -195,6 +195,7 @@ export default function TradersView({
                                 <button
                                   onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(t.address); toast.success('Copied') }}
                                   className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                                  aria-label="Copy address"
                                 >
                                   <Copy className="h-3 w-3" />
                                 </button>
@@ -280,7 +281,7 @@ export default function TradersView({
                       <TableCell>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label="Remove trader">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>

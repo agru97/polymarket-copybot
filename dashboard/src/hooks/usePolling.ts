@@ -6,6 +6,7 @@ export interface StatsData {
   dryRun?: boolean
   bot?: { state: string; cycleCount?: number; uptime?: number; consecutiveErrors?: number }
   risk?: Record<string, any>
+  positions?: Position[]
   stats?: {
     totalPnl?: number
     wins?: number
@@ -15,6 +16,8 @@ export interface StatsData {
     dailyPnl?: { day: string; pnl: number; trades?: number }[]
     byBucket?: { bucket: string; pnl: number; count: number }[]
     byTrader?: { trader_address: string; count: number; pnl: number }[]
+    byMarket?: { market_name: string; count: number; pnl: number }[]
+    resolvedTrades?: { timestamp: string; pnl: number }[]
     recentSnapshots?: {
       timestamp: string
       equity: number
@@ -51,6 +54,21 @@ export interface Trade {
   notes?: string
 }
 
+export interface Position {
+  id: number
+  market_id: string
+  token_id: string
+  side: string
+  entry_price: number
+  size_usd: number
+  current_price: number
+  unrealized_pnl: number
+  trader_address: string
+  bucket: string
+  opened_at: string
+  status: string
+}
+
 const PAGE_SIZE = 25
 
 export function usePolling(onUnauthorized: () => void) {
@@ -62,6 +80,7 @@ export function usePolling(onUnauthorized: () => void) {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalTrades, setTotalTrades] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -96,6 +115,9 @@ export function usePolling(onUnauthorized: () => void) {
       // Only show error if ALL failed
       const allFailed = results.every(r => r.status === 'rejected')
       setError(allFailed ? 'Failed to fetch data' : '')
+
+      // Track last successful update if at least one request succeeded
+      if (!allFailed) setLastUpdated(new Date())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch')
     } finally {
@@ -109,5 +131,5 @@ export function usePolling(onUnauthorized: () => void) {
     return () => clearInterval(id)
   }, [fetchData])
 
-  return { stats, trades, traders, config, error, loading, refresh: fetchData, page, setPage, totalTrades, pageSize: PAGE_SIZE }
+  return { stats, trades, traders, config, error, loading, refresh: fetchData, page, setPage, totalTrades, pageSize: PAGE_SIZE, lastUpdated }
 }

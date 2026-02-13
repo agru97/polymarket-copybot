@@ -7,10 +7,12 @@ import EquityCurveChart from './charts/EquityCurveChart'
 import DailyPnLChart from './charts/DailyPnLChart'
 import BucketPnLChart from './charts/BucketPnLChart'
 import TraderPnLChart from './charts/TraderPnLChart'
+import MarketPnLChart from './charts/MarketPnLChart'
+import WinRateChart from './charts/WinRateChart'
 import TimeRangeSelector, { type TimeRange } from './charts/TimeRangeSelector'
 import { Skeleton } from '@/components/ui/skeleton'
 
-type SecondaryTab = 'daily' | 'bucket' | 'trader'
+type SecondaryTab = 'daily' | 'bucket' | 'trader' | 'market' | 'winrate'
 
 interface Stats {
   totalPnl?: number
@@ -20,6 +22,8 @@ interface Stats {
   dailyPnl?: { day: string; pnl: number; trades?: number }[]
   byBucket?: { bucket: string; pnl: number; count: number }[]
   byTrader?: { trader_address: string; count: number; pnl: number }[]
+  byMarket?: { market_name: string; count: number; pnl: number }[]
+  resolvedTrades?: { timestamp: string; pnl: number }[]
   recentSnapshots?: {
     timestamp: string
     equity: number
@@ -76,11 +80,15 @@ export default function ChartsPane({ stats }: { stats?: Stats | null }) {
             <ToggleGroupItem value="daily" className="text-xs px-3">Daily P&L</ToggleGroupItem>
             <ToggleGroupItem value="bucket" className="text-xs px-3">By Bucket</ToggleGroupItem>
             <ToggleGroupItem value="trader" className="text-xs px-3">By Trader</ToggleGroupItem>
+            <ToggleGroupItem value="market" className="text-xs px-3">By Market</ToggleGroupItem>
+            <ToggleGroupItem value="winrate" className="text-xs px-3">Win Rate</ToggleGroupItem>
           </ToggleGroup>
 
           {tab === 'daily' && <DailyPnLChart data={stats.dailyPnl || []} range={range} height={200} />}
           {tab === 'bucket' && <BucketPnLChart data={stats.byBucket || []} />}
           {tab === 'trader' && <TraderPnLChart data={stats.byTrader || []} />}
+          {tab === 'market' && <MarketPnLChart data={stats.byMarket || []} />}
+          {tab === 'winrate' && <WinRateChart data={stats.resolvedTrades || []} />}
         </div>
       </CardContent>
     </Card>

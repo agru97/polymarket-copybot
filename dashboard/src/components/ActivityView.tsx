@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { getAuditLog, downloadExport } from '@/api'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,6 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { fadeInUp, defaultTransition } from '@/lib/animations'
 
 interface AuditEntry {
@@ -40,16 +46,25 @@ export default function ActivityView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    getAuditLog()
-      .then(data => setEntries(Array.isArray(data) ? data : data.entries || []))
-      .catch((err) => {
-        if (!(err instanceof Error && err.message === 'Unauthorized')) {
-          setError('Failed to load activity log')
-        }
-      })
-      .finally(() => setLoading(false))
+  const fetchLog = useCallback(async () => {
+    try {
+      const data = await getAuditLog()
+      setEntries(Array.isArray(data) ? data : data.entries || [])
+      setError('')
+    } catch (err) {
+      if (!(err instanceof Error && err.message === 'Unauthorized')) {
+        setError('Failed to load activity log')
+      }
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    fetchLog()
+    const id = setInterval(fetchLog, 15000)
+    return () => clearInterval(id)
+  }, [fetchLog])
 
   return (
     <motion.div variants={fadeInUp} initial="hidden" animate="visible" transition={defaultTransition}>
@@ -77,7 +92,7 @@ export default function ActivityView() {
             </div>
           ) : entries.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
-              No activity recorded yet
+              No activity recorded yet. Login attempts, settings changes, and bot actions will appear here.
             </div>
           ) : (
             <div className="h-[500px] overflow-auto rounded-md border border-border">
@@ -106,8 +121,19 @@ export default function ActivityView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs">{entry.actor || '—'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[300px] truncate">
-                        {entry.details || '—'}
+                      <TableCell className="text-xs text-muted-foreground max-w-[300px]">
+                        {!entry.details ? '—' : entry.details.length > 50 ? (
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="block truncate cursor-default">{entry.details}</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[400px] whitespace-normal">
+                                <span className="text-xs">{entry.details}</span>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : entry.details}
                       </TableCell>
                       <TableCell className="text-xs font-mono text-muted-foreground">
                         {entry.ip || '—'}

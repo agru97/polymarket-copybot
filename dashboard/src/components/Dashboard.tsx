@@ -20,7 +20,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
     localStorage.removeItem('bot_csrf')
     onLogout()
   }, [onLogout])
-  const { stats, trades, traders, error, refresh, page, setPage, totalTrades, pageSize } = usePolling(handleUnauthorized)
+  const { stats, trades, traders, error, refresh, page, setPage, totalTrades, pageSize, lastUpdated } = usePolling(handleUnauthorized)
 
   const renderView = () => {
     switch (activeView) {
@@ -45,6 +45,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
         onToggleTheme={toggleTheme}
         onRefresh={refresh}
         onLogout={onLogout}
+        lastUpdated={lastUpdated}
       />
 
       <div className="flex-1 flex overflow-hidden">

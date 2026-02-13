@@ -132,10 +132,12 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 Export CSV
               </Button>
             </div>
-            <div className="flex gap-1 flex-wrap">
+            <div className="flex gap-1 flex-wrap" role="tablist" aria-label="Filter trades by status">
               {tabs.map(tab => (
                 <button
                   key={tab.value}
+                  role="tab"
+                  aria-selected={activeTab === tab.value}
                   onClick={() => setActiveTab(tab.value)}
                   className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                     activeTab === tab.value
@@ -159,13 +161,15 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 placeholder="Search trades..."
                 value={searchQuery}
                 onChange={e => handleSearchChange(e.target.value)}
+                aria-label="Search trades"
                 className="w-full h-8 pl-8 pr-3 rounded-md border border-input bg-background text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
-            <div className="flex gap-0.5">
+            <div className="flex gap-0.5" role="group" aria-label="Filter trades by date range">
               {dateFilters.map(df => (
                 <button
                   key={df.value}
+                  aria-pressed={dateFilter === df.value}
                   onClick={() => setDateFilter(df.value)}
                   className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
                     dateFilter === df.value
@@ -200,6 +204,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 size="sm"
                 disabled={page <= 1}
                 onClick={() => onPageChange(page - 1)}
+                aria-label="Previous page"
               >
                 Prev
               </Button>
@@ -208,6 +213,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 size="sm"
                 disabled={page >= Math.ceil(totalTrades / pageSize)}
                 onClick={() => onPageChange(page + 1)}
+                aria-label="Next page"
               >
                 Next
               </Button>
