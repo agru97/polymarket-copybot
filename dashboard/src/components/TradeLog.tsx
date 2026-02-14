@@ -1,24 +1,24 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Search } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { DataTable } from '@/components/ui/data-table'
 import { getTradeColumns } from '@/components/trades/trade-columns'
 import { downloadExport } from '@/api'
-import type { Trade, Trader } from '@/hooks/usePolling'
+import type { Trade, Trader, TradeFilters, StatusCounts } from '@/hooks/usePolling'
 import type { SortingState } from '@tanstack/react-table'
 
 type TabValue = 'all' | 'executed' | 'simulated' | 'blocked' | 'failed' | 'skipped'
 type DateFilter = 'all' | 'today' | '7d' | '30d'
 
-const tabs: { value: TabValue; label: string; filter?: string }[] = [
+const tabs: { value: TabValue; label: string; statusKey?: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'executed', label: 'Executed', filter: 'executed' },
-  { value: 'simulated', label: 'Simulated', filter: 'simulated' },
-  { value: 'blocked', label: 'Blocked', filter: 'risk_blocked' },
-  { value: 'failed', label: 'Failed', filter: 'failed' },
-  { value: 'skipped', label: 'Skipped', filter: 'filtered' },
+  { value: 'executed', label: 'Executed', statusKey: 'executed' },
+  { value: 'simulated', label: 'Simulated', statusKey: 'simulated' },
+  { value: 'blocked', label: 'Blocked', statusKey: 'risk_blocked' },
+  { value: 'failed', label: 'Failed', statusKey: 'failed' },
+  { value: 'skipped', label: 'Skipped', statusKey: 'filtered' },
 ]
 
 const dateFilters: { value: DateFilter; label: string }[] = [
@@ -35,15 +35,53 @@ interface TradeLogProps {
   totalTrades: number
   pageSize: number
   onPageChange: (page: number) => void
+  statusCounts: StatusCounts
+  tradeFilters: TradeFilters
+  onTradeFiltersChange: (filters: TradeFilters) => void
 }
 
-export default function TradeLog({ trades, traders, page, totalTrades, pageSize, onPageChange }: TradeLogProps) {
-  const [activeTab, setActiveTab] = useState<TabValue>('all')
+export default function TradeLog({
+  trades, traders, page, totalTrades, pageSize, onPageChange,
+  statusCounts, tradeFilters, onTradeFiltersChange,
+}: TradeLogProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'timestamp', desc: true },
   ])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [searchInput, setSearchInput] = useState('')
+
+  const activeTab = useMemo<TabValue>(() => {
+    const status = tradeFilters.status
+    if (!status) return 'all'
+    const tab = tabs.find(t => t.statusKey === status)
+    return tab?.value ?? 'all'
+  }, [tradeFilters.status])
+
+  const dateFilter = useMemo<DateFilter>(() => {
+    return (tradeFilters.dateRange as DateFilter) || 'all'
+  }, [tradeFilters.dateRange])
+
+  // Debounced search
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      onPageChange(1)
+      onTradeFiltersChange({ ...tradeFilters, search: value || undefined })
+    }, 400)
+  }, [tradeFilters, onTradeFiltersChange, onPageChange])
+  useEffect(() => () => clearTimeout(debounceRef.current), [])
+
+  const handleTabChange = useCallback((tab: TabValue) => {
+    const statusKey = tabs.find(t => t.value === tab)?.statusKey
+    onPageChange(1)
+    onTradeFiltersChange({ ...tradeFilters, status: statusKey })
+  }, [tradeFilters, onTradeFiltersChange, onPageChange])
+
+  const handleDateChange = useCallback((df: DateFilter) => {
+    onPageChange(1)
+    onTradeFiltersChange({ ...tradeFilters, dateRange: df === 'all' ? undefined : df })
+  }, [tradeFilters, onTradeFiltersChange, onPageChange])
 
   const traderLabels = useMemo(() => {
     const map: Record<string, string> = {}
@@ -53,60 +91,16 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
     return map
   }, [traders])
 
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => setDebouncedSearch(value), 300)
+  const getCount = (tab: TabValue): number => {
+    if (tab === 'all') return statusCounts.all || 0
+    const statusKey = tabs.find(t => t.value === tab)?.statusKey
+    if (!statusKey) return 0
+    return statusCounts[statusKey] || 0
   }
-  useEffect(() => () => clearTimeout(debounceRef.current), [])
-
-  const dateFiltered = useMemo(() => {
-    if (dateFilter === 'all') return trades
-    const now = Date.now()
-    const cutoffs: Record<string, number> = {
-      today: new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
-      '7d': now - 7 * 24 * 60 * 60 * 1000,
-      '30d': now - 30 * 24 * 60 * 60 * 1000,
-    }
-    const cutoff = cutoffs[dateFilter] ?? 0
-    return trades.filter(t => t.timestamp && new Date(t.timestamp).getTime() >= cutoff)
-  }, [trades, dateFilter])
-
-  const searchFiltered = useMemo(() => {
-    if (!debouncedSearch) return dateFiltered
-    const q = debouncedSearch.toLowerCase()
-    return dateFiltered.filter(t => {
-      const label = traderLabels[t.trader_address?.toLowerCase() ?? ''] ?? ''
-      return (
-        t.market_name?.toLowerCase().includes(q) ||
-        t.trader_address?.toLowerCase().includes(q) ||
-        label.toLowerCase().includes(q) ||
-        t.side?.toLowerCase().includes(q) ||
-        t.bucket?.toLowerCase().includes(q) ||
-        t.status?.toLowerCase().includes(q) ||
-        t.notes?.toLowerCase().includes(q)
-      )
-    })
-  }, [dateFiltered, debouncedSearch, traderLabels])
-
-  const counts: Record<string, number> = {
-    all: searchFiltered.length,
-    executed: searchFiltered.filter(t => t.status === 'executed').length,
-    simulated: searchFiltered.filter(t => t.status === 'simulated').length,
-    blocked: searchFiltered.filter(t => t.status === 'risk_blocked').length,
-    failed: searchFiltered.filter(t => t.status === 'failed').length,
-    skipped: searchFiltered.filter(t => t.status === 'filtered').length,
-  }
-
-  const filtered = activeTab === 'all'
-    ? searchFiltered
-    : searchFiltered.filter(t => t.status === tabs.find(tab => tab.value === activeTab)?.filter)
 
   const columns = useMemo(() => getTradeColumns(traderLabels), [traderLabels])
 
-  if (!trades.length) {
+  if (!trades.length && !tradeFilters.status && !tradeFilters.search && !tradeFilters.dateRange) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -138,7 +132,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                   key={tab.value}
                   role="tab"
                   aria-selected={activeTab === tab.value}
-                  onClick={() => setActiveTab(tab.value)}
+                  onClick={() => handleTabChange(tab.value)}
                   className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                     activeTab === tab.value
                       ? 'bg-primary/10 text-primary'
@@ -147,7 +141,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 >
                   {tab.label}
                   <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 min-w-[18px] justify-center">
-                    {counts[tab.value]}
+                    {getCount(tab.value)}
                   </Badge>
                 </button>
               ))}
@@ -159,7 +153,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
               <input
                 type="text"
                 placeholder="Search trades..."
-                value={searchQuery}
+                value={searchInput}
                 onChange={e => handleSearchChange(e.target.value)}
                 aria-label="Search trades"
                 className="w-full h-8 pl-8 pr-3 rounded-md border border-input bg-background text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
@@ -170,7 +164,7 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
                 <button
                   key={df.value}
                   aria-pressed={dateFilter === df.value}
-                  onClick={() => setDateFilter(df.value)}
+                  onClick={() => handleDateChange(df.value)}
                   className={`rounded-md px-2 py-1 text-[10px] font-medium transition-colors ${
                     dateFilter === df.value
                       ? 'bg-primary/10 text-primary'
@@ -185,42 +179,114 @@ export default function TradeLog({ trades, traders, page, totalTrades, pageSize,
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[400px] overflow-auto rounded-md border border-border">
+        <div className="max-h-[calc(100vh-420px)] min-h-[300px] overflow-auto rounded-md border border-border">
           <DataTable
             columns={columns}
-            data={filtered}
+            data={trades}
             sorting={sorting}
             onSortingChange={setSorting as (updater: SortingState | ((prev: SortingState) => SortingState)) => void}
           />
         </div>
-        {totalTrades > pageSize && (
-          <div className="flex items-center justify-between pt-3 border-t mt-3">
-            <span className="text-xs text-muted-foreground">
-              Page {page} of {Math.ceil(totalTrades / pageSize)} ({totalTrades} trades)
-            </span>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => onPageChange(page - 1)}
-                aria-label="Previous page"
-              >
-                Prev
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={page >= Math.ceil(totalTrades / pageSize)}
-                onClick={() => onPageChange(page + 1)}
-                aria-label="Next page"
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <Pagination page={page} totalItems={totalTrades} pageSize={pageSize} onPageChange={onPageChange} />
       </CardContent>
     </Card>
+  )
+}
+
+function Pagination({ page, totalItems, pageSize, onPageChange }: {
+  page: number
+  totalItems: number
+  pageSize: number
+  onPageChange: (page: number) => void
+}) {
+  const totalPages = Math.ceil(totalItems / pageSize)
+  if (totalPages <= 1) return null
+
+  // Build visible page numbers: always show first, last, current, and neighbors
+  const pages: (number | 'ellipsis')[] = []
+  const addPage = (p: number) => {
+    if (p >= 1 && p <= totalPages && !pages.includes(p)) pages.push(p)
+  }
+
+  addPage(1)
+  if (page > 3) pages.push('ellipsis')
+  for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+    addPage(i)
+  }
+  if (page < totalPages - 2) pages.push('ellipsis')
+  addPage(totalPages)
+
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, totalItems)
+
+  return (
+    <div className="flex items-center justify-between pt-3 mt-3 border-t border-border">
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {from}–{to} of {totalItems}
+      </span>
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={page <= 1}
+          onClick={() => onPageChange(1)}
+          aria-label="First page"
+        >
+          <ChevronsLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+
+        {pages.map((p, i) =>
+          p === 'ellipsis' ? (
+            <span key={`e${i}`} className="px-1 text-xs text-muted-foreground select-none">...</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p)}
+              className={`h-7 min-w-[28px] px-1.5 rounded-md text-xs font-medium transition-colors ${
+                p === page
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              }`}
+              aria-label={`Page ${p}`}
+              aria-current={p === page ? 'page' : undefined}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(totalPages)}
+          aria-label="Last page"
+        >
+          <ChevronsRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
   )
 }

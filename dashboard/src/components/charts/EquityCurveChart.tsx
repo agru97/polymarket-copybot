@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useId } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts'
 import ChartTooltip from './ChartTooltip'
 import { Switch } from '@/components/ui/switch'
@@ -36,21 +36,19 @@ export default function EquityCurveChart({
   height?: number
 }) {
   const [showDrawdown, setShowDrawdown] = useState(false)
-
-  const filtered = useMemo(() => {
-    if (range === 'all') return snapshots
-    const now = Date.now()
-    const ms: Record<string, number> = {
-      '24h': 24 * 60 * 60 * 1000,
-      '7d': 7 * 24 * 60 * 60 * 1000,
-      '30d': 30 * 24 * 60 * 60 * 1000,
-      '90d': 90 * 24 * 60 * 60 * 1000,
-    }
-    const cutoff = now - (ms[range] ?? 0)
-    return snapshots.filter(s => new Date(s.timestamp).getTime() >= cutoff)
-  }, [snapshots, range])
+  const eqGradId = useId()
+  const ddGradId = useId()
 
   const data = useMemo(() => {
+    if (snapshots.length === 0) return []
+    // Backend already filters by range, but do client-side filtering for snapshot data
+    const now = Date.now()
+    const ms: Record<string, number> = {
+      '24h': 86400000, '7d': 604800000, '30d': 2592000000, '90d': 7776000000,
+    }
+    const filtered = range === 'all' ? snapshots
+      : snapshots.filter(s => new Date(s.timestamp).getTime() >= now - (ms[range] ?? 0))
+
     if (filtered.length === 0) return []
     let peak = filtered[0].equity
     return filtered.map(s => {
@@ -63,7 +61,7 @@ export default function EquityCurveChart({
         drawdown: Math.round(dd * 100) / 100,
       }
     })
-  }, [filtered, range])
+  }, [snapshots, range])
 
   if (data.length === 0) {
     return (
@@ -89,11 +87,11 @@ export default function EquityCurveChart({
       <ResponsiveContainer width="100%" height={height}>
         <AreaChart data={data} margin={{ top: 5, right: showDrawdown ? 40 : 5, left: -15, bottom: 0 }}>
           <defs>
-            <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={eqGradId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.12} />
               <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
             </linearGradient>
-            <linearGradient id="drawdownGrad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={ddGradId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="hsl(var(--loss))" stopOpacity={0} />
               <stop offset="100%" stopColor="hsl(var(--loss))" stopOpacity={0.3} />
             </linearGradient>
@@ -132,8 +130,8 @@ export default function EquityCurveChart({
             name="Equity"
             stroke="hsl(var(--foreground))"
             strokeWidth={2}
-            fill="url(#equityGrad)"
-            animationDuration={600}
+            fill={`url(#${eqGradId})`}
+            isAnimationActive={false}
           />
           <Line
             yAxisId="equity"
@@ -144,7 +142,7 @@ export default function EquityCurveChart({
             strokeWidth={1}
             strokeDasharray="4 4"
             dot={false}
-            animationDuration={600}
+            isAnimationActive={false}
           />
           {showDrawdown && (
             <Area
@@ -154,8 +152,8 @@ export default function EquityCurveChart({
               name="Drawdown"
               stroke="hsl(var(--loss))"
               strokeWidth={1}
-              fill="url(#drawdownGrad)"
-              animationDuration={600}
+              fill={`url(#${ddGradId})`}
+              isAnimationActive={false}
             />
           )}
         </AreaChart>

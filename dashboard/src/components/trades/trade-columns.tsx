@@ -10,6 +10,7 @@ import {
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { formatSide } from '@/lib/format'
 import type { Trade } from '@/hooks/usePolling'
 
 const statusVariant: Record<string, 'profit' | 'info' | 'warning' | 'loss' | 'secondary'> = {
@@ -32,13 +33,6 @@ const statusLabel: Record<string, string> = {
   rejected: 'Rejected',
   filtered: 'Skipped',
   no_position: 'No Position',
-}
-
-function formatSide(side?: string): { direction: string; outcome: string } {
-  if (!side) return { direction: '', outcome: '—' }
-  if (side.startsWith('CLOSE_')) return { direction: 'Close', outcome: side.slice(6) }
-  if (side === 'SELL') return { direction: 'Sell', outcome: '' }
-  return { direction: 'Buy', outcome: side }
 }
 
 export function getTradeColumns(traderLabels: Record<string, string>): ColumnDef<Trade>[] {

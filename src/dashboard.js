@@ -190,7 +190,9 @@ function start(getEquity, setEquity) {
   // ─────────────────────────────────
   app.get('/api/stats', (req, res) => {
     try {
-      const stats = db.getTradeStats();
+      const VALID_RANGES = ['24h', '7d', '30d', '90d', 'all'];
+      const range = VALID_RANGES.includes(req.query.range) ? req.query.range : 'all';
+      const stats = db.getTradeStats(range);
       const positions = db.getOpenPositions();
       const equity = getEquityFn();
       const riskStatus = risk.getRiskStatus(equity);
@@ -212,8 +214,14 @@ function start(getEquity, setEquity) {
       const page = Math.max(1, parseInt(req.query.page) || 1);
       const pageSize = Math.min(Math.max(1, parseInt(req.query.pageSize) || 25), 100);
       const offset = (page - 1) * pageSize;
-      const { trades, total } = db.getPaginatedTrades(pageSize, offset);
-      res.json({ trades, total, page, pageSize });
+      const VALID_STATUSES = ['executed', 'simulated', 'risk_blocked', 'slippage_blocked', 'failed', 'rejected', 'filtered', 'no_position'];
+      const VALID_DATE_RANGES = ['today', '7d', '30d'];
+      const filters = {};
+      if (req.query.status && VALID_STATUSES.includes(req.query.status)) filters.status = req.query.status;
+      if (req.query.dateRange && VALID_DATE_RANGES.includes(req.query.dateRange)) filters.dateRange = req.query.dateRange;
+      if (req.query.search) filters.search = String(req.query.search).slice(0, 200);
+      const { trades, total, counts } = db.getPaginatedTrades(pageSize, offset, filters);
+      res.json({ trades, total, page, pageSize, counts });
     } catch (err) {
       res.status(500).json({ error: safeError(err) });
     }

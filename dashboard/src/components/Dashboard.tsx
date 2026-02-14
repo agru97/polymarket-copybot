@@ -20,12 +20,12 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
     localStorage.removeItem('bot_csrf')
     onLogout()
   }, [onLogout])
-  const { stats, trades, traders, error, refresh, page, setPage, totalTrades, pageSize, lastUpdated } = usePolling(handleUnauthorized)
+  const { stats, trades, traders, error, refresh, page, setPage, totalTrades, pageSize, lastUpdated, statusCounts, tradeFilters, setTradeFilters, chartRange, setChartRange } = usePolling(handleUnauthorized)
 
   const renderView = () => {
     switch (activeView) {
       case 'dashboard':
-        return <DashboardView stats={stats} trades={trades} traders={traders} onAction={refresh} page={page} totalTrades={totalTrades} pageSize={pageSize} onPageChange={setPage} />
+        return <DashboardView stats={stats} trades={trades} traders={traders} onAction={refresh} page={page} totalTrades={totalTrades} pageSize={pageSize} onPageChange={setPage} statusCounts={statusCounts} tradeFilters={tradeFilters} onTradeFiltersChange={setTradeFilters} chartRange={chartRange} onChartRangeChange={setChartRange} />
       case 'traders':
         return <TradersView traders={traders} stats={stats} onUpdate={refresh} />
       case 'settings':

@@ -7,7 +7,13 @@ interface TraderData {
   pnl: number
 }
 
-export default function TraderPnLChart({ data }: { data: TraderData[] }) {
+export default function TraderPnLChart({
+  data,
+  traderLabels = {},
+}: {
+  data: TraderData[]
+  traderLabels?: Record<string, string>
+}) {
   if (data.length === 0) {
     return (
       <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
@@ -16,12 +22,16 @@ export default function TraderPnLChart({ data }: { data: TraderData[] }) {
     )
   }
 
-  const chartData = data.map(t => ({
-    name: `${t.trader_address.slice(0, 6)}...${t.trader_address.slice(-4)}`,
-    pnl: t.pnl,
-    count: t.count,
-    label: `${t.count} trades`,
-  }))
+  const chartData = data.map(t => {
+    const addr = t.trader_address || ''
+    const friendly = traderLabels[addr.toLowerCase()]
+    return {
+      name: friendly || (addr.length >= 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr || '—'),
+      pnl: t.pnl ?? 0,
+      count: t.count ?? 0,
+      label: `${t.count ?? 0} trades`,
+    }
+  })
 
   return (
     <ResponsiveContainer width="100%" height={200}>
@@ -36,13 +46,13 @@ export default function TraderPnLChart({ data }: { data: TraderData[] }) {
         <YAxis
           type="category"
           dataKey="name"
-          tick={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}
+          tick={{ fontSize: 10 }}
           axisLine={false}
           tickLine={false}
-          width={90}
+          width={100}
         />
         <Tooltip content={<ChartTooltip />} />
-        <Bar dataKey="pnl" name="P&L" radius={[0, 4, 4, 0]} maxBarSize={28} animationDuration={600}>
+        <Bar dataKey="pnl" name="P&L" radius={[0, 4, 4, 0]} maxBarSize={28} isAnimationActive={false}>
           {chartData.map((entry, i) => (
             <Cell
               key={i}

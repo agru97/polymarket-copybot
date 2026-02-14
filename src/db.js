@@ -37,6 +37,7 @@ function init() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       market_id TEXT NOT NULL,
       token_id TEXT NOT NULL,
+      market_name TEXT DEFAULT '',
       side TEXT NOT NULL,
       entry_price REAL NOT NULL,
       size_usd REAL NOT NULL,
@@ -93,6 +94,21 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_trades_market_status_resolved ON trades(market_id, status, resolved);
   `);
 
+  // Migration: add market_name to positions if missing (existing DBs)
+  const cols = db.prepare(`PRAGMA table_info(positions)`).all();
+  if (!cols.some(c => c.name === 'market_name')) {
+    db.prepare(`ALTER TABLE positions ADD COLUMN market_name TEXT DEFAULT ''`).run();
+  }
+
+  // Backfill market_name for existing positions from trades table
+  db.prepare(`
+    UPDATE positions SET market_name = (
+      SELECT t.market_name FROM trades t
+      WHERE t.market_id = positions.market_id AND t.market_name != ''
+      ORDER BY t.timestamp DESC LIMIT 1
+    ) WHERE market_name = '' OR market_name IS NULL
+  `).run();
+
   return db;
 }
 
@@ -135,18 +151,19 @@ function upsertPosition(pos) {
       const newSize = oldSize + pos.sizeUsd;
       const weightedEntry = ((existing.entry_price * oldSize) + (pos.entryPrice * pos.sizeUsd)) / newSize;
       d.prepare(`
-        UPDATE positions SET size_usd = ?, entry_price = ?, current_price = ? WHERE id = ?
+        UPDATE positions SET size_usd = ?, entry_price = ?, current_price = ?, market_name = COALESCE(NULLIF(?, ''), market_name) WHERE id = ?
       `).run(
         Math.round(newSize * 100) / 100,
         Math.round(weightedEntry * 10000) / 10000,
         pos.entryPrice,
+        pos.marketName || '',
         existing.id
       );
     } else {
       d.prepare(`
-        INSERT INTO positions (market_id, token_id, side, entry_price, size_usd, trader_address, bucket)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(pos.marketId, pos.tokenId, pos.side, pos.entryPrice, pos.sizeUsd, pos.traderAddress, pos.bucket);
+        INSERT INTO positions (market_id, token_id, market_name, side, entry_price, size_usd, trader_address, bucket)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(pos.marketId, pos.tokenId, pos.marketName || '', pos.side, pos.entryPrice, pos.sizeUsd, pos.traderAddress, pos.bucket);
     }
   });
   _upsert(pos);
@@ -250,15 +267,88 @@ function getRecentTrades(limit = 50) {
   return getDb().prepare(`SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?`).all(limit);
 }
 
-function getPaginatedTrades(limit = 25, offset = 0) {
+function getPaginatedTrades(limit = 25, offset = 0, filters = {}) {
   const d = getDb();
-  const trades = d.prepare(`SELECT * FROM trades ORDER BY timestamp DESC LIMIT ? OFFSET ?`).all(limit, offset);
-  const { total } = d.prepare(`SELECT COUNT(*) as total FROM trades`).get();
-  return { trades, total };
+  const where = [];
+  const params = [];
+
+  // Status filter
+  if (filters.status) {
+    where.push('status = ?');
+    params.push(filters.status);
+  }
+
+  // Date range filter
+  if (filters.dateRange === 'today') {
+    where.push("date(timestamp) = date('now')");
+  } else if (filters.dateRange === '7d') {
+    where.push("timestamp >= datetime('now', '-7 days')");
+  } else if (filters.dateRange === '30d') {
+    where.push("timestamp >= datetime('now', '-30 days')");
+  }
+
+  // Search filter (escape LIKE wildcards in user input)
+  if (filters.search) {
+    where.push("(market_name LIKE ? ESCAPE '\\' OR trader_address LIKE ? ESCAPE '\\' OR side LIKE ? ESCAPE '\\' OR bucket LIKE ? ESCAPE '\\' OR status LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')");
+    const escaped = filters.search.replace(/[\\%_]/g, c => '\\' + c);
+    const q = `%${escaped}%`;
+    params.push(q, q, q, q, q, q);
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const trades = d.prepare(
+    `SELECT * FROM trades ${whereClause} ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+  ).all(...params, limit, offset);
+
+  const { total } = d.prepare(
+    `SELECT COUNT(*) as total FROM trades ${whereClause}`
+  ).get(...params);
+
+  // Status counts (with date + search filters applied, but NOT status filter)
+  const countWhere = [];
+  const countParams = [];
+  if (filters.dateRange === 'today') {
+    countWhere.push("date(timestamp) = date('now')");
+  } else if (filters.dateRange === '7d') {
+    countWhere.push("timestamp >= datetime('now', '-7 days')");
+  } else if (filters.dateRange === '30d') {
+    countWhere.push("timestamp >= datetime('now', '-30 days')");
+  }
+  if (filters.search) {
+    countWhere.push("(market_name LIKE ? ESCAPE '\\' OR trader_address LIKE ? ESCAPE '\\' OR side LIKE ? ESCAPE '\\' OR bucket LIKE ? ESCAPE '\\' OR status LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')");
+    const escaped = filters.search.replace(/[\\%_]/g, c => '\\' + c);
+    const q = `%${escaped}%`;
+    countParams.push(q, q, q, q, q, q);
+  }
+  const countWhereClause = countWhere.length ? `WHERE ${countWhere.join(' AND ')}` : '';
+
+  const countsRows = d.prepare(
+    `SELECT status, COUNT(*) as count FROM trades ${countWhereClause} GROUP BY status`
+  ).all(...countParams);
+
+  const counts = { all: 0 };
+  for (const row of countsRows) {
+    counts[row.status] = row.count;
+    counts.all += row.count;
+  }
+
+  return { trades, total, counts };
 }
 
-function getTradeStats() {
+function getTradeStats(range = 'all') {
   const d = getDb();
+
+  // Build time cutoff clause
+  const RANGE_MS = { '24h': 86400000, '7d': 604800000, '30d': 2592000000, '90d': 7776000000 };
+  let cutoffClause = '';
+  const cutoffParam = [];
+  if (range !== 'all' && RANGE_MS[range]) {
+    cutoffClause = ' AND timestamp >= ?';
+    cutoffParam.push(new Date(Date.now() - RANGE_MS[range]).toISOString());
+  }
+
+  const summaryWhere = cutoffClause ? `WHERE 1=1 ${cutoffClause}` : '';
   const summary = d.prepare(`
     SELECT
       COUNT(*) as total,
@@ -267,16 +357,34 @@ function getTradeStats() {
       COALESCE(SUM(CASE WHEN resolved = 1 THEN pnl ELSE 0 END), 0) as totalPnl,
       COALESCE(SUM(CASE WHEN pnl > 0 AND resolved = 1 THEN pnl ELSE 0 END), 0) as gains,
       COALESCE(SUM(CASE WHEN pnl < 0 AND resolved = 1 THEN ABS(pnl) ELSE 0 END), 0) as grossLosses
-    FROM trades
-  `).get();
-  const byBucket = d.prepare(`SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY bucket`).all();
-  const byTrader = d.prepare(`SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') GROUP BY trader_address`).all();
-  const byMarket = d.prepare(`SELECT market_name, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') AND market_name != '' GROUP BY market_name ORDER BY ABS(COALESCE(SUM(pnl), 0)) DESC LIMIT 15`).all();
-  const resolvedTrades = d.prepare(`SELECT timestamp, pnl FROM trades WHERE resolved = 1 ORDER BY timestamp ASC`).all();
-  const dailyPnl = d.prepare(`SELECT day, pnl, trades FROM (SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 GROUP BY date(timestamp) ORDER BY day DESC LIMIT 30) ORDER BY day ASC`).all();
-  const recentSnapshots = d.prepare(`SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT 168) ORDER BY timestamp ASC`).all();
+    FROM trades ${summaryWhere}
+  `).get(...cutoffParam);
+
+  const byBucket = d.prepare(
+    `SELECT bucket, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') ${cutoffClause} GROUP BY bucket`
+  ).all(...cutoffParam);
+
+  const byTrader = d.prepare(
+    `SELECT trader_address, COUNT(*) as count, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE status IN ('executed', 'simulated') ${cutoffClause} GROUP BY trader_address`
+  ).all(...cutoffParam);
+
+  const resolvedTrades = d.prepare(
+    `SELECT timestamp, pnl FROM trades WHERE resolved = 1 ${cutoffClause} ORDER BY timestamp ASC`
+  ).all(...cutoffParam);
+
+  const dailyPnl = d.prepare(
+    `SELECT date(timestamp) as day, SUM(pnl) as pnl, COUNT(*) as trades FROM trades WHERE resolved = 1 ${cutoffClause} GROUP BY date(timestamp) ORDER BY day ASC`
+  ).all(...cutoffParam);
+
+  // Snapshots: adjust limit based on range (hourly data)
+  const SNAPSHOT_LIMITS = { '24h': 24, '7d': 168, '30d': 720, '90d': 2160 };
+  const snapLimit = SNAPSHOT_LIMITS[range] || 999999;
+  const recentSnapshots = d.prepare(
+    `SELECT * FROM (SELECT * FROM snapshots ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`
+  ).all(snapLimit);
+
   const profitFactor = summary.grossLosses === 0 ? (summary.gains > 0 ? Infinity : 0) : Math.round((summary.gains / summary.grossLosses) * 100) / 100;
-  return { total: summary.total, wins: summary.wins, losses: summary.losses, totalPnl: summary.totalPnl, profitFactor, byBucket, byTrader, byMarket, resolvedTrades, dailyPnl, recentSnapshots };
+  return { total: summary.total, wins: summary.wins, losses: summary.losses, totalPnl: summary.totalPnl, profitFactor, byBucket, byTrader, resolvedTrades, dailyPnl, recentSnapshots };
 }
 
 function getProfitFactor() {

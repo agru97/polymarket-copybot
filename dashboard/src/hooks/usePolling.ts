@@ -16,7 +16,6 @@ export interface StatsData {
     dailyPnl?: { day: string; pnl: number; trades?: number }[]
     byBucket?: { bucket: string; pnl: number; count: number }[]
     byTrader?: { trader_address: string; count: number; pnl: number }[]
-    byMarket?: { market_name: string; count: number; pnl: number }[]
     resolvedTrades?: { timestamp: string; pnl: number }[]
     recentSnapshots?: {
       timestamp: string
@@ -58,6 +57,7 @@ export interface Position {
   id: number
   market_id: string
   token_id: string
+  market_name: string
   side: string
   entry_price: number
   size_usd: number
@@ -69,7 +69,15 @@ export interface Position {
   status: string
 }
 
-const PAGE_SIZE = 25
+export interface TradeFilters {
+  status?: string
+  dateRange?: string
+  search?: string
+}
+
+export type StatusCounts = Record<string, number>
+
+const PAGE_SIZE = 50
 
 export function usePolling(onUnauthorized: () => void) {
   const [stats, setStats] = useState<StatsData | null>(null)
@@ -80,13 +88,16 @@ export function usePolling(onUnauthorized: () => void) {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalTrades, setTotalTrades] = useState(0)
+  const [statusCounts, setStatusCounts] = useState<StatusCounts>({ all: 0 })
+  const [tradeFilters, setTradeFilters] = useState<TradeFilters>({})
+  const [chartRange, setChartRange] = useState('7d')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
       const results = await Promise.allSettled([
-        getStats(),
-        getTrades(page, PAGE_SIZE),
+        getStats(chartRange),
+        getTrades(page, PAGE_SIZE, tradeFilters),
         getTraders(),
         getConfig(),
       ])
@@ -108,6 +119,7 @@ export function usePolling(onUnauthorized: () => void) {
         const tradesList = Array.isArray(tradesRes) ? tradesRes : tradesRes.trades
         setTrades(Array.isArray(tradesList) ? tradesList : [])
         setTotalTrades(Array.isArray(tradesRes) ? tradesRes.length : (tradesRes.total || 0))
+        if (tradesRes.counts) setStatusCounts(tradesRes.counts)
       }
       if (results[2].status === 'fulfilled') setTraders(results[2].value.traders || [])
       if (results[3].status === 'fulfilled') setConfig(results[3].value)
@@ -123,7 +135,7 @@ export function usePolling(onUnauthorized: () => void) {
     } finally {
       setLoading(false)
     }
-  }, [onUnauthorized, page])
+  }, [onUnauthorized, page, tradeFilters, chartRange])
 
   useEffect(() => {
     fetchData()
@@ -131,5 +143,10 @@ export function usePolling(onUnauthorized: () => void) {
     return () => clearInterval(id)
   }, [fetchData])
 
-  return { stats, trades, traders, config, error, loading, refresh: fetchData, page, setPage, totalTrades, pageSize: PAGE_SIZE, lastUpdated }
+  return {
+    stats, trades, traders, config, error, loading, refresh: fetchData,
+    page, setPage, totalTrades, pageSize: PAGE_SIZE, lastUpdated,
+    statusCounts, tradeFilters, setTradeFilters,
+    chartRange, setChartRange,
+  }
 }

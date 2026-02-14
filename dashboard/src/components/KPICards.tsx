@@ -14,7 +14,7 @@ function formatChange(change: number, pct: number) {
   )
 }
 
-export default function KPICards({ stats, risk }: { stats?: StatsData | null; risk?: Record<string, any> }) {
+export default function KPICards({ stats, risk, unrealizedPnl = 0 }: { stats?: StatsData | null; risk?: Record<string, any>; unrealizedPnl?: number }) {
   const totalPnl = stats?.stats?.totalPnl ?? 0
   const dailyPnl = risk?.dailyPnl ?? 0
   const wins = stats?.stats?.wins ?? 0
@@ -62,9 +62,12 @@ export default function KPICards({ stats, risk }: { stats?: StatsData | null; ri
           sparkline={equitySparkData.length >= 2 ? <MiniSparkline data={equitySparkData} color="hsl(var(--primary))" /> : undefined}
         />
         <KPICard
-          title="Total P&L"
+          title="Realized P&L"
           value={stats != null ? formatUsd(totalPnl) : '$—'}
-          subtitle="All time"
+          subtitle={unrealizedPnl !== 0
+            ? <span>Unrealized: <span className={unrealizedPnl >= 0 ? 'text-profit' : 'text-loss'}>{unrealizedPnl >= 0 ? '+' : ''}{formatUsd(unrealizedPnl)}</span></span>
+            : 'Closed trades'
+          }
           icon={<TrendingUp className="h-4 w-4" />}
           valueColor={totalPnl >= 0 ? 'text-profit' : 'text-loss'}
           sparkline={pnlSparkData.length >= 2 ? <MiniSparkline data={pnlSparkData} color={totalPnl >= 0 ? 'hsl(var(--profit))' : 'hsl(var(--loss))'} /> : undefined}

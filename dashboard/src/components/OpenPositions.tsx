@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header'
-import { formatUsd } from '@/lib/format'
+import { formatUsd, formatSide } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import type { Position } from '@/hooks/usePolling'
@@ -16,18 +16,21 @@ function formatPnl(pnl: number): string {
 function getPositionColumns(): ColumnDef<Position>[] {
   return [
     {
-      accessorKey: 'market_id',
+      accessorKey: 'market_name',
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Market" />
       ),
-      cell: ({ row }) => (
-        <span
-          className="max-w-[200px] truncate text-xs block"
-          title={row.original.market_id}
-        >
-          {row.original.market_id}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const name = row.original.market_name || row.original.market_id
+        return (
+          <span
+            className="max-w-[220px] truncate text-xs block"
+            title={name}
+          >
+            {name}
+          </span>
+        )
+      },
     },
     {
       accessorKey: 'side',
@@ -35,14 +38,15 @@ function getPositionColumns(): ColumnDef<Position>[] {
         <DataTableColumnHeader column={column} title="Side" />
       ),
       cell: ({ row }) => {
-        const side = row.original.side
+        const { direction, outcome } = formatSide(row.original.side)
+        const isClose = direction === 'Close' || direction === 'Sell'
         return (
-          <Badge
-            variant={side === 'YES' || side === 'BUY' ? 'profit' : 'loss'}
-            className="text-[10px]"
-          >
-            {side}
-          </Badge>
+          <span className="text-xs whitespace-nowrap">
+            <span className={cn('font-medium', isClose ? 'text-loss' : 'text-profit')}>
+              {direction}
+            </span>
+            {outcome && <span className="text-muted-foreground"> · {outcome}</span>}
+          </span>
         )
       },
     },

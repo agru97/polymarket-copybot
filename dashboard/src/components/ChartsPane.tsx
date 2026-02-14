@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -7,12 +7,12 @@ import EquityCurveChart from './charts/EquityCurveChart'
 import DailyPnLChart from './charts/DailyPnLChart'
 import BucketPnLChart from './charts/BucketPnLChart'
 import TraderPnLChart from './charts/TraderPnLChart'
-import MarketPnLChart from './charts/MarketPnLChart'
 import WinRateChart from './charts/WinRateChart'
 import TimeRangeSelector, { type TimeRange } from './charts/TimeRangeSelector'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { Trader } from '@/hooks/usePolling'
 
-type SecondaryTab = 'daily' | 'bucket' | 'trader' | 'market' | 'winrate'
+type SecondaryTab = 'daily' | 'bucket' | 'trader' | 'winrate'
 
 interface Stats {
   totalPnl?: number
@@ -22,7 +22,6 @@ interface Stats {
   dailyPnl?: { day: string; pnl: number; trades?: number }[]
   byBucket?: { bucket: string; pnl: number; count: number }[]
   byTrader?: { trader_address: string; count: number; pnl: number }[]
-  byMarket?: { market_name: string; count: number; pnl: number }[]
   resolvedTrades?: { timestamp: string; pnl: number }[]
   recentSnapshots?: {
     timestamp: string
@@ -34,9 +33,26 @@ interface Stats {
   }[]
 }
 
-export default function ChartsPane({ stats }: { stats?: Stats | null }) {
-  const [range, setRange] = useState<TimeRange>('7d')
+export default function ChartsPane({
+  stats,
+  traders = [],
+  range,
+  onRangeChange,
+}: {
+  stats?: Stats | null
+  traders?: Trader[]
+  range: TimeRange
+  onRangeChange: (r: TimeRange | string) => void
+}) {
   const [tab, setTab] = useState<SecondaryTab>('daily')
+
+  const traderLabels = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of traders) {
+      map[t.address.toLowerCase()] = t.label || t.bucket
+    }
+    return map
+  }, [traders])
 
   if (!stats) {
     return (
@@ -61,7 +77,7 @@ export default function ChartsPane({ stats }: { stats?: Stats | null }) {
               Export CSV
             </Button>
           </div>
-          <TimeRangeSelector value={range} onChange={setRange} />
+          <TimeRangeSelector value={range} onChange={(v) => onRangeChange(v)} />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -80,14 +96,12 @@ export default function ChartsPane({ stats }: { stats?: Stats | null }) {
             <ToggleGroupItem value="daily" className="text-xs px-3">Daily P&L</ToggleGroupItem>
             <ToggleGroupItem value="bucket" className="text-xs px-3">By Bucket</ToggleGroupItem>
             <ToggleGroupItem value="trader" className="text-xs px-3">By Trader</ToggleGroupItem>
-            <ToggleGroupItem value="market" className="text-xs px-3">By Market</ToggleGroupItem>
             <ToggleGroupItem value="winrate" className="text-xs px-3">Win Rate</ToggleGroupItem>
           </ToggleGroup>
 
-          {tab === 'daily' && <DailyPnLChart data={stats.dailyPnl || []} range={range} height={200} />}
+          {tab === 'daily' && <DailyPnLChart data={stats.dailyPnl || []} height={200} />}
           {tab === 'bucket' && <BucketPnLChart data={stats.byBucket || []} />}
-          {tab === 'trader' && <TraderPnLChart data={stats.byTrader || []} />}
-          {tab === 'market' && <MarketPnLChart data={stats.byMarket || []} />}
+          {tab === 'trader' && <TraderPnLChart data={stats.byTrader || []} traderLabels={traderLabels} />}
           {tab === 'winrate' && <WinRateChart data={stats.resolvedTrades || []} />}
         </div>
       </CardContent>

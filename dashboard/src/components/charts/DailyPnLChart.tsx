@@ -4,7 +4,6 @@ import {
   Tooltip, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts'
 import ChartTooltip from './ChartTooltip'
-import type { TimeRange } from './TimeRangeSelector'
 
 interface DailyPnl {
   day: string
@@ -14,30 +13,22 @@ interface DailyPnl {
 
 export default function DailyPnLChart({
   data,
-  range = '30d',
   height = 200,
 }: {
   data: DailyPnl[]
-  range?: TimeRange
   height?: number
 }) {
-  const filtered = useMemo(() => {
-    if (range === 'all') return data
-    const days = range === '24h' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : 90
-    return data.slice(-days)
-  }, [data, range])
-
   const chartData = useMemo(() => {
     let cumulative = 0
-    return filtered.map(d => {
+    return data.map(d => {
       cumulative += d.pnl
       return {
-        date: d.day.slice(5),
+        date: d.day.length >= 10 ? d.day.slice(5) : d.day,
         pnl: d.pnl,
-        cumulative,
+        cumulative: Math.round(cumulative * 100) / 100,
       }
     })
-  }, [filtered])
+  }, [data])
 
   if (data.length === 0) {
     return (
@@ -65,7 +56,7 @@ export default function DailyPnLChart({
         />
         <Tooltip content={<ChartTooltip />} />
         <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1} />
-        <Bar dataKey="pnl" name="Daily P&L" radius={[3, 3, 0, 0]} maxBarSize={28} animationDuration={600}>
+        <Bar dataKey="pnl" name="Daily P&L" radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false}>
           {chartData.map((entry, i) => (
             <Cell
               key={i}
@@ -81,7 +72,7 @@ export default function DailyPnLChart({
           stroke="hsl(var(--foreground))"
           strokeWidth={2}
           dot={false}
-          animationDuration={600}
+          isAnimationActive={false}
         />
       </ComposedChart>
     </ResponsiveContainer>

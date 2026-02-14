@@ -34,13 +34,22 @@ async function jsonOrThrow(res: Response) {
   return data;
 }
 
-export async function getStats() {
-  const res = await apiFetch('/api/stats');
+export async function getStats(range?: string) {
+  const params = range && range !== 'all' ? `?range=${range}` : '';
+  const res = await apiFetch(`/api/stats${params}`);
   return jsonOrThrow(res);
 }
 
-export async function getTrades(page = 1, pageSize = 25) {
-  const res = await apiFetch(`/api/trades?page=${page}&pageSize=${pageSize}`);
+export async function getTrades(
+  page = 1,
+  pageSize = 25,
+  filters: { status?: string; dateRange?: string; search?: string } = {}
+) {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (filters.status) params.set('status', filters.status);
+  if (filters.dateRange) params.set('dateRange', filters.dateRange);
+  if (filters.search) params.set('search', filters.search);
+  const res = await apiFetch(`/api/trades?${params}`);
   return jsonOrThrow(res);
 }
 

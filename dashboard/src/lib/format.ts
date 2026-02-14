@@ -30,3 +30,10 @@ export function formatUptime(ms?: number): string {
   if (m > 0) return `${m}m ${s % 60}s`
   return `${s}s`
 }
+
+export function formatSide(side?: string): { direction: string; outcome: string } {
+  if (!side) return { direction: '', outcome: '—' }
+  if (side.startsWith('CLOSE_')) return { direction: 'Close', outcome: side.slice(6) }
+  if (side === 'SELL') return { direction: 'Sell', outcome: '' }
+  return { direction: 'Buy', outcome: side }
+}

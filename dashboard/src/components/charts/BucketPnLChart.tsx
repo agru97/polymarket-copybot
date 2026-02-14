@@ -42,7 +42,7 @@ export default function BucketPnLChart({ data }: { data: BucketData[] }) {
           width={70}
         />
         <Tooltip content={<ChartTooltip />} />
-        <Bar dataKey="pnl" name="P&L" radius={[0, 4, 4, 0]} maxBarSize={32} animationDuration={600}>
+        <Bar dataKey="pnl" name="P&L" radius={[0, 4, 4, 0]} maxBarSize={32} isAnimationActive={false}>
           {chartData.map((entry, i) => (
             <Cell
               key={i}

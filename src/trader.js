@@ -574,7 +574,7 @@ async function executeSignal(signal, currentEquity) {
       sizeUsd: ourSize, leaderSizeUsd: leaderSize, status: 'simulated',
       dryRun: true, notes: `Simulated $${ourSize.toFixed(2)}`,
     });
-    db.upsertPosition({ marketId, tokenId, side, entryPrice: price, sizeUsd: ourSize, traderAddress, bucket });
+    db.upsertPosition({ marketId, tokenId, marketName, side, entryPrice: price, sizeUsd: ourSize, traderAddress, bucket });
     notifications.notifyTradeExecuted({ side, sizeUsd: ourSize, marketName, price, dryRun: true });
     return { simulated: true, size: ourSize, price };
   }
@@ -708,7 +708,7 @@ async function executeSignal(signal, currentEquity) {
         notes: `FOK ${status}${txHashes.length ? ' tx:' + txHashes[0].slice(0, 14) : ''}`,
       });
       db.upsertPosition({
-        marketId, tokenId, side,
+        marketId, tokenId, marketName, side,
         entryPrice: currentPrice || price,
         sizeUsd: ourSize, traderAddress, bucket,
       });

@@ -155,9 +155,58 @@ const MOCK_TRADES = (() => {
 app.get('/api/trades', (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const pageSize = Math.min(Math.max(1, parseInt(req.query.pageSize) || 25), 100);
+
+  // Apply filters
+  let filtered = MOCK_TRADES;
+  if (req.query.status) {
+    filtered = filtered.filter(t => t.status === req.query.status);
+  }
+  if (req.query.dateRange) {
+    const now = Date.now();
+    const cutoffs = {
+      today: new Date(new Date().setHours(0, 0, 0, 0)).getTime(),
+      '7d': now - 7 * 24 * 60 * 60 * 1000,
+      '30d': now - 30 * 24 * 60 * 60 * 1000,
+    };
+    const cutoff = cutoffs[req.query.dateRange] || 0;
+    filtered = filtered.filter(t => t.timestamp && new Date(t.timestamp).getTime() >= cutoff);
+  }
+  if (req.query.search) {
+    const q = req.query.search.toLowerCase();
+    filtered = filtered.filter(t =>
+      (t.market_name || '').toLowerCase().includes(q) ||
+      (t.trader_address || '').toLowerCase().includes(q) ||
+      (t.side || '').toLowerCase().includes(q) ||
+      (t.bucket || '').toLowerCase().includes(q) ||
+      (t.status || '').toLowerCase().includes(q) ||
+      (t.notes || '').toLowerCase().includes(q)
+    );
+  }
+
+  // Build counts (with date+search filters but NOT status filter)
+  let countBase = MOCK_TRADES;
+  if (req.query.dateRange) {
+    const now = Date.now();
+    const cutoffs = { today: new Date(new Date().setHours(0, 0, 0, 0)).getTime(), '7d': now - 7 * 24 * 60 * 60 * 1000, '30d': now - 30 * 24 * 60 * 60 * 1000 };
+    const cutoff = cutoffs[req.query.dateRange] || 0;
+    countBase = countBase.filter(t => t.timestamp && new Date(t.timestamp).getTime() >= cutoff);
+  }
+  if (req.query.search) {
+    const q = req.query.search.toLowerCase();
+    countBase = countBase.filter(t =>
+      (t.market_name || '').toLowerCase().includes(q) || (t.trader_address || '').toLowerCase().includes(q) ||
+      (t.side || '').toLowerCase().includes(q) || (t.bucket || '').toLowerCase().includes(q) ||
+      (t.status || '').toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q)
+    );
+  }
+  const counts = { all: countBase.length };
+  for (const t of countBase) {
+    counts[t.status] = (counts[t.status] || 0) + 1;
+  }
+
   const offset = (page - 1) * pageSize;
-  const trades = MOCK_TRADES.slice(offset, offset + pageSize);
-  res.json({ trades, total: MOCK_TRADES.length, page, pageSize });
+  const trades = filtered.slice(offset, offset + pageSize);
+  res.json({ trades, total: filtered.length, page, pageSize, counts });
 });
 
 app.get('/api/traders', (req, res) => {
